@@ -23,6 +23,8 @@ If we want to use each thread in a grid to calculate one output element of a vec
 **Solution:**
   
 <details>
+  
+**C** it would be i = blockIdx.x * blockDim.x + threadIdx.x We need all three of these, we need `blockIdx.x` to identify the block and the `blockDim.x` to identify how big each block is. Each of the blocks has the same lengt (e.g. 256). So assuming we want to run the kernel for the 128th element of block in block one we would assign i to `1 * 256 + 128 = 384`
 
 </details>
 
@@ -37,9 +39,8 @@ Assume that we want to use each thread to calculate two adjacent elements of a v
 - D. `i = blockIdx.x * blockDim.x * 2 + threadIdx.x;`
 
 **Solution:**
-<details>
 
-</details>
+**TODO**
 
 ### Exercise 3
 **Question:**
