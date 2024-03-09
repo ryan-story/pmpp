@@ -53,7 +53,7 @@ We want to use each thread to calculate two elements of a vector addition. Each 
 **Solution:**
 
 <details>
-
+???
 </details>
 
 
@@ -83,7 +83,7 @@ For a vector addition, assume that the vector length is 8000, each thread calcul
 
 <details>
 
-
+**C**. Each blok has 1024 threads, we need to have 8 thread blocks to process 8000 th elements. Meaning there will be `8 * 1024 = 8192` threads.  
 
 </details>
 
@@ -113,7 +113,7 @@ If we want to allocate an array of v integer elements in the CUDA device global 
 
 <details>
 
-
+**D**. cudaMalloc function takes two arguments, address of a pointer and the size in bytes. Since we want to allocate `v x int_size` bytes the answer D makes sense. 
 
 </details>
 
@@ -143,7 +143,7 @@ If we want to allocate an array of n floating-point elements and have a floating
 
 <details>
 
-
+** D **. The first argument of the `cudaMalloc` function is a point3r to a pointer. Since `A_d` is a pointer the address `&A_d` is an address of a pointer. `cudaMallock` takes type void as a first argument, therefore we need to cast the pointer to the right type
 
 </details>
 
@@ -173,7 +173,7 @@ If we want to copy 3000 bytes of data from host array A_h (A_h is a pointer to e
 
 <details>
 
-
+**C** `A_d` is the destination, `A_h` is the source, the size is 3000 and the direction of transfer is from `host` to `device`. Therefore the answer is C.
 
 </details>
 
@@ -203,6 +203,6 @@ How would one declare a variable err that can appropriately receive the returned
 
 <details>
 
-
+**C** The correct type of cuda errors is cudaError_t so the answer is C. 
 
 </details>
