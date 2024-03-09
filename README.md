@@ -10,8 +10,7 @@ This README provides exercises and solutions related to using threads and blocks
 ## Exercises
 
 ### Exercise 1
-**Question:**
-If we want to use each thread in a grid to calculate one output element of a vector addition, what would be the expression for mapping the thread/block indices to the data index (i)?
+**Question:** If we want to use each thread in a grid to calculate one output element of a vector addition, what would be the expression for mapping the thread/block indices to the data index (i)?
 
 **Choices:**
 - A. `i = threadIdx.x + threadIdx.y;`
@@ -29,8 +28,7 @@ If we want to use each thread in a grid to calculate one output element of a vec
 </details>
 
 ### Exercise 2
-**Question:**
-Assume that we want to use each thread to calculate two adjacent elements of a vector addition. What would be the expression for mapping the thread/block indices to the data index (i) of the first element to be processed by a thread?
+**Question:** Assume that we want to use each thread to calculate two adjacent elements of a vector addition. What would be the expression for mapping the thread/block indices to the data index (i) of the first element to be processed by a thread?
 
 **Choices:**
 - A. `i = blockIdx.x * blockDim.x + threadIdx.x * 2;`
@@ -47,8 +45,7 @@ Assume that we want to use each thread to calculate two adjacent elements of a v
 </details>
 
 ### Exercise 3
-**Question:**
-We want to use each thread to calculate two elements of a vector addition. Each thread block processes 2 * blockDim.x consecutive elements that form two sections. All threads in each block will process a section first, each processing one element. They will then all move to the next section, each processing one element. What would be the correct expression for the data index (i)? processing one element. Assume that variable i should be the index for the first element to be processed by a thread. What would be the expression for mapping the thread/block indices to data index of the first element?
+**Question:** We want to use each thread to calculate two elements of a vector addition. Each thread block processes 2 * blockDim.x consecutive elements that form two sections. All threads in each block will process a section first, each processing one element. They will then all move to the next section, each processing one element. What would be the correct expression for the data index (i)? processing one element. Assume that variable i should be the index for the first element to be processed by a thread. What would be the expression for mapping the thread/block indices to data index of the first element?
 
 **Solution:**
 
@@ -61,9 +58,7 @@ We want to use each thread to calculate two elements of a vector addition. Each 
 
 ### Exercise 4
 
-**Question:**
-
-For a vector addition, assume that the vector length is 8000, each thread calculates one output element, and the thread block size is 1024 threads. The programmer configures the kernel call to have a minimum number of thread blocks to cover all output elements. How many threads will be in the grid?
+**Question:** For a vector addition, assume that the vector length is 8000, each thread calculates one output element, and the thread block size is 1024 threads. The programmer configures the kernel call to have a minimum number of thread blocks to cover all output elements. How many threads will be in the grid?
 
 
 
@@ -91,11 +86,7 @@ For a vector addition, assume that the vector length is 8000, each thread calcul
 
 ### Exercise 5
 
-**Question:**
-
-If we want to allocate an array of v integer elements in the CUDA device global memory, what would be an appropriate expression for the second argument of the `cudaMalloc` call?
-
-
+**Question:** If we want to allocate an array of v integer elements in the CUDA device global memory, what would be an appropriate expression for the second argument of the `cudaMalloc` call?
 
 **Choices:**
 
@@ -121,9 +112,7 @@ If we want to allocate an array of v integer elements in the CUDA device global 
 
 ### Exercise 6
 
-**Question:**
-
-If we want to allocate an array of n floating-point elements and have a floating-point pointer variable A_d to point to the allocated memory, what would be an appropriate expression for the first argument of the `cudaMalloc` call?
+**Question:** If we want to allocate an array of n floating-point elements and have a floating-point pointer variable A_d to point to the allocated memory, what would be an appropriate expression for the first argument of the `cudaMalloc` call?
 
 
 
@@ -151,9 +140,7 @@ If we want to allocate an array of n floating-point elements and have a floating
 
 ### Exercise 7
 
-**Question:**
-
-If we want to copy 3000 bytes of data from host array A_h (A_h is a pointer to element 0 of the source array) to device array A_d (A_d is a pointer to element 0 of the destination array), what would be an appropriate API call for this data copy in CUDA?
+**Question:** If we want to copy 3000 bytes of data from host array A_h (A_h is a pointer to element 0 of the source array) to device array A_d (A_d is a pointer to element 0 of the destination array), what would be an appropriate API call for this data copy in CUDA?
 
 
 
@@ -181,9 +168,7 @@ If we want to copy 3000 bytes of data from host array A_h (A_h is a pointer to e
 
 ### Exercise 8
 
-**Question:**
-
-How would one declare a variable err that can appropriately receive the returned value of a CUDA API call?
+**Question:** How would one declare a variable err that can appropriately receive the returned value of a CUDA API call?
 
 
 
@@ -206,3 +191,44 @@ How would one declare a variable err that can appropriately receive the returned
 **C** The correct type of cuda errors is cudaError_t so the answer is C. 
 
 </details>
+
+### Exercise 9
+
+Consider the following CUDA kernel and the corresponding host function
+that calls it:
+
+```c
+__global__ void foo_kernel(float* a, float* b, unsigned int N) {
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (i < N) {
+        b[i] = 2.7f * a[i] - 4.3f;
+    }
+}
+
+void foo(float* a_d, float* b_d) {
+    unsigned int N = 200000;
+    foo_kernel<<<(N + 128 - 1) / 128, 128>>>(a_d, b_d, N);
+}
+```
+
+**a. What is the number of threads per block?**
+As indicated by the second argument of the kernel launch parameters (the thing in `<< >>>`) it is `128`.
+
+**b. What is the number of threads in the grid?**
+The number of threads lanched is equal to `number_of_blocks * block_size`. The `number_of_blocks` is inducated by the first argument of kernel launch parameters in our case `(N + 128 - 1) / 128` -> `(200000 + 128 - 1) // 128 = 1563`. The number of threads will be therefore `1563*128 = 200064`
+
+
+**c. What is the number of blocks in the grid?**
+As above `1563`
+
+**d. What is the number of threads that execute the code on line 02?**
+As above `1563*128 = 200064`
+
+**e. What is the number of threads that execute the code on line 04?**
+Here we have an if statement limiting the execution to only the memory allocated in `cudaMalloc`, in this case `N=200000` so the last 64 threds will not be used.
+
+### Exercise 10:
+**Question:** A new summer intern was frustrated with CUDA. He has been complaining that CUDA is very tedious. He had to declare many functions that he plans to execute on both the host and the device twice, once as a host function and once as a device function. What is your response?
+
+**Solution:** You can just use the cuda function with `__host__` and `__device__` function type qualifiers. Than the cuda compiler will compile both a host and device versions of the function. No need to duplicate your code. 
