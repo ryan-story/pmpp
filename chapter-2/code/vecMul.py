@@ -1,7 +1,8 @@
 from pathlib import Path
+from time import time
+
 import torch
 from torch.utils.cpp_extension import load_inline
-from time import time
 
 
 def vector_multipication_loop(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
@@ -15,11 +16,14 @@ def vector_multipication_loop(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
         C[i] = A[i] * B[i]
     return C
 
+
 def compile_extension():
     cuda_source = (Path(__file__).parent / "vecMulTorchTensor.cu").read_text()
-    cpp_source = "torch::Tensor vector_multiplication(torch::Tensor A, torch::Tensor B_h);"
+    cpp_source = (
+        "torch::Tensor vector_multiplication(torch::Tensor A, torch::Tensor B_h);"
+    )
 
-    extension = load_inline(
+    return load_inline(
         name="extension",
         cpp_sources=cpp_source,
         cuda_sources=cuda_source,
@@ -28,7 +32,6 @@ def compile_extension():
         # extra_cuda_cflags=["-O2"]
     )
 
-    return extension
 
 def main():
     ext = compile_extension()
@@ -44,20 +47,20 @@ def main():
     y_custom_kernel = ext.vector_multiplication(A, B)
     stop = time()
     print(f"Cuda custom kernel multiply: {stop - start:.2f}s")
-    
+
     start = time()
-    y_loop = vector_multipication_loop(A, B)
+    vector_multipication_loop(A, B)
     stop = time()
     print(f"Python loop: {stop - start:.2f}s")
-    
+
     start = time()
-    y_pytorch = A + B
+    A + B
     stop = time()
     print(f"Adding via PyTorch addition: {stop - start:.2f}s")
 
-
     print("Size:", y_custom_kernel.size())
     print("Y:", y_custom_kernel[:10])
+
 
 if __name__ == "__main__":
     main()
