@@ -1,10 +1,11 @@
-// nvcc -o matrix_mul matrix_mul_benchmark.cu
+// nvcc -o thread_coaersing_matmul thread_coaersing_matmul.cu
 
 #include <iostream>
 #include <cuda_runtime.h>
 #include <cmath>
 #include <iomanip>
 #define TILE_WIDTH 32
+#define COARSE_FACTOR 4
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -45,9 +46,8 @@ __global__ void MatrixMulKernel(float *M, float *N, float *P, int m, int n, int 
     }
 }
 
-__global__ void TiledMatrixMulKernel(float *M, float *N, float *P, int m, int n, int o)
+__global__ void TiledMatrixMulKernelWithThreadCoarsening(float *M, float *N, float *P, int m, int n, int o)
 {
-
     __shared__ float Mds[TILE_WIDTH][TILE_WIDTH];
     __shared__ float Nds[TILE_WIDTH][TILE_WIDTH];
 
@@ -58,9 +58,10 @@ __global__ void TiledMatrixMulKernel(float *M, float *N, float *P, int m, int n,
 
     // we use this to identify the current P element
     int row = by * TILE_WIDTH + ty;
-    int col = bx * TILE_WIDTH + tx;
+    int colStart = bx * TILE_WIDTH * COARSE_FACTOR + tx;
 
-    float PValue = 0;
+    float Pvalue[COARSE_FACTOR] = {0.0f};
+
     for (int ph = 0; ph < (n + TILE_WIDTH - 1) / TILE_WIDTH; ph++)
     {
         if (row < m && (ph * TILE_WIDTH + tx) < n)
@@ -68,22 +69,28 @@ __global__ void TiledMatrixMulKernel(float *M, float *N, float *P, int m, int n,
         else
             Mds[ty][tx] = 0.0f;
 
-        if ((ph * TILE_WIDTH + ty) < n && (col < o))
-            Nds[ty][tx] = N[(ph * TILE_WIDTH + ty) * o + col]; // col is from ty + phase + actual col in the phase
-        else
-            Nds[ty][tx] = 0.0f;
+        for (int c=0; c < COARSE_FACTOR; c++){
+            int col = colStart + c * COARSE_FACTOR;
+            
+            if ((ph * TILE_WIDTH + ty) < n && (col < o))
+                Nds[ty][tx] = N[(ph * TILE_WIDTH + ty) * o + col]; // col is from ty + phase + actual col in the phase
+            else
+                Nds[ty][tx] = 0.0f;    
+            __syncthreads(); // make sure everything is loaded to both tile matrices for the consecutive c
 
-        __syncthreads(); // make sure everything is loaded to both tile matrices
-
-        for (int k = 0; k < TILE_WIDTH; k++)
-        {
-            PValue += Mds[ty][k] * Nds[k][tx];
+            for (int k = 0; k < TILE_WIDTH; k++)
+            {
+                Pvalue[c] += Mds[ty][k] * Nds[k][tx];
+            }
+            __syncthreads();
         }
-        __syncthreads(); // make sure we update this for every thread and we can start overwriting
     }
 
-    if (row < m && col < o)
-        P[row * o + col] = PValue;
+    for (int c=0; c < COARSE_FACTOR; c++){
+        int col = colStart + c * COARSE_FACTOR;
+        if (row < m && col < o)
+            P[row * o + col] = Pvalue[c];
+    }
 }
 
 void matrixMul(float *M, float *N, float *P, int m, int n, int o)
@@ -109,7 +116,12 @@ void matrixMul(float *M, float *N, float *P, int m, int n, int o)
     cudaFree(d_P);
 }
 
-void matrixMulTiling(float *M, float *N, float *P, int m, int n, int o)
+inline unsigned int cdiv(unsigned int a, unsigned int b) {
+  return (a + b - 1) / b;
+}
+
+
+void matrixMulTilingWithThreadCoarsing(float *M, float *N, float *P, int m, int n, int o)
 {
     float *d_M, *d_N, *d_P;
 
@@ -121,9 +133,9 @@ void matrixMulTiling(float *M, float *N, float *P, int m, int n, int o)
     cudaMemcpy(d_N, N, n * o * sizeof(float), cudaMemcpyHostToDevice);
 
     dim3 dimBlock(TILE_WIDTH, TILE_WIDTH);
-    dim3 dimGrid((o + dimBlock.x - 1) / dimBlock.x, (m + dimBlock.y - 1) / dimBlock.y);
+    dim3 dimGrid(cdiv(o, dimBlock.x * COARSE_FACTOR), cdiv(m, dimBlock.y));
 
-    TiledMatrixMulKernel<<<dimGrid, dimBlock>>>(d_M, d_N, d_P, m, n, o);
+    TiledMatrixMulKernelWithThreadCoarsening<<<dimGrid, dimBlock>>>(d_M, d_N, d_P, m, n, o);
 
     cudaMemcpy(P, d_P, m * o * sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -204,14 +216,19 @@ int main()
         N[i] = static_cast<float>(1.5);
 
     // Benchmark matrixMul function
-    float avgTimeMatrixMulTiling = benchmark(matrixMulTiling, M, N, P1, m, n, o);
-    std::cout << "Average time for matrixMulTiling: " << avgTimeMatrixMulTiling << " ms" << std::endl;
+    float avgTimeMatrixMulTiling = benchmark(matrixMulTilingWithThreadCoarsing, M, N, P1, m, n, o);
+    std::cout << "Average time for matrixMulTilingWithThreadCoarsing: " << avgTimeMatrixMulTiling << " ms" << std::endl;
 
     float avgTimeMatrixMul = benchmark(matrixMul, M, N, P2, m, n, o);
     std::cout << "Average time for matrixMul: " << avgTimeMatrixMul << " ms" << std::endl;
 
     bool same = allclose(P1, P2, m, o);
     std::cout << "Outputs are " << (same ? "approximately the same" : "different") << std::endl;
+
+    // printf("\n");
+    // printMatrix(P1, m, o);
+    // printf("\n");
+    // printMatrix(P2, m, o);
 
     delete[] M;
     delete[] N;
