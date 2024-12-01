@@ -2,10 +2,6 @@
 
 #define BLOCK_SIZE 4
 
-inline unsigned int cdiv(unsigned int a, unsigned int b) {
-    return (a + b - 1) / b;
-}
-
 __global__ void conv2d_kernel(float *M, float *F, float *P, int r, int height, int width) {
     int outRow = blockDim.y * blockIdx.y + threadIdx.y;
     int outCol = blockDim.x * blockIdx.x + threadIdx.x;
