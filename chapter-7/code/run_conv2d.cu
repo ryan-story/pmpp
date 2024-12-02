@@ -1,7 +1,7 @@
 // nvcc run_conv2d.cu conv2d_functions.cu -o conv2d_program
 #include <iostream>
 #include <iomanip>
-#include "conv_2d_kernels.cuh"
+#include "conv2d_functions.cuh"
 
 void printMatrix(float *matrix, int rows, int cols) {
     for (int i = 0; i < rows; ++i) {
@@ -28,7 +28,7 @@ int main(int argc, char const *argv[]) {
         1/16.f, 2/16.f, 1/16.f
     };
     
-    conv2d(M, gaussian_kernel, P, r, size, size);
+    conv2d_with_constant_memory(M, gaussian_kernel, P, r, size, size);
     printMatrix(P, size, size);
     
     return 0;
