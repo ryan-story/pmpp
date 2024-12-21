@@ -1,6 +1,10 @@
 #include <torch/extension.h>
-#include "conv2d_functions.cuh"
+#include "conv2d_kernels.cuh"
 #include <c10/cuda/CUDAStream.h>
+
+inline unsigned int cdiv(unsigned int a, unsigned int b) {
+    return (a + b - 1) / b;
+}
 
 torch::Tensor conv2d_torch(torch::Tensor input, torch::Tensor kernel, int padding) {
     TORCH_CHECK(input.device().type() == torch::kCUDA, "Input must be a CUDA tensor");
@@ -28,7 +32,7 @@ torch::Tensor conv2d_torch(torch::Tensor input, torch::Tensor kernel, int paddin
     return output;
 }
 
-torch::Tensor conv2d_torch_with_constant_memory(torch::Tensor input, torch::Tensor kernel, int padding) {
+torch::Tensor conv2d_torch_with_constant_memory(torch::Tensor input, torch::Tensor kernel, int r) {
     TORCH_CHECK(input.device().type() == torch::kCUDA, "Input must be a CUDA tensor");
     TORCH_CHECK(kernel.device().type() == torch::kCUDA, "Kernel must be a CUDA tensor");
     TORCH_CHECK(input.dtype() == torch::kFloat32, "Input must be float32");
@@ -36,14 +40,14 @@ torch::Tensor conv2d_torch_with_constant_memory(torch::Tensor input, torch::Tens
 
     int height = input.size(0);
     int width = input.size(1);
-    int r = padding;
-
     auto output = torch::empty_like(input);
+    cudaError_t error;
 
-    // Copy kernel to constant memory
-    cudaMemcpyToSymbol(constFilter, 
-                       kernel.data_ptr<float>(),
-                       (2*r+1) * (2*r+1) * sizeof(float));
+    error = initConstFilter(kernel.data_ptr<float>(), r);
+    if (error != cudaSuccess) {
+        std::cout << "Failed to initialize constant memory: " << cudaGetErrorString(error) << std::endl;
+        return output;
+    }
 
     const dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
     dim3 dimGrid(cdiv(width, dimBlock.x), cdiv(height, dimBlock.y));

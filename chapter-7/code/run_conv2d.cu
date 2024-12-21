@@ -1,6 +1,8 @@
-// nvcc run_conv2d.cu conv2d_functions.cu -o conv2d_program
+// nvcc run_conv2d.cu conv2d_functions.cu conv2d_kernels.cu -o conv2d_program
 #include <iostream>
 #include <iomanip>
+
+#include "conv2d_kernels.cuh"
 #include "conv2d_functions.cuh"
 
 void printMatrix(float *matrix, int rows, int cols) {
