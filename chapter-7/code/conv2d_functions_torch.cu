@@ -62,49 +62,6 @@ torch::Tensor conv2d_torch_with_constant_memory(torch::Tensor input, torch::Tens
     return output;
 }
 
-#define IN_TILE_SIZE 32
-#define OUT_TILE_SIZE (IN_TILE_SIZE - 2*FILTER_RADIUS)
-__global__ void tiled_convolution_kernel(float *M, float *P, int r, int height, int width) {
-    int row = blockDim.y *IN_TILE_SIZE + threadIdx.y - FILTER_RADIUS;
-    int col = blockDim.x * IN_TILE_SIZE + threadIdx.x - FILTER_RADIUS;
-
-    __shared__ float M_s[IN_TILE_SIZE][IN_TILE_SIZE];
-
-    if (row >= 0 && row < height && col >= 0 && col < width)
-        M_s[threadIdx.y][threadIdx.x] = M[row * width + col];
-    else {
-        M_s[threadIdx.y][threadIdx.x] = 0.0;
-    }
-    __syncthreads();
-
-    int tileCol = threadIdx.x - FILTER_RADIUS;
-    int tileRow = threadIdx.y - FILTER_RADIUS;
-    int filterIndex;
-
-    if (row >= 0 && row < height && col >= 0 && col < width){
-        if (tileRow >= 0 && tileRow < OUT_TILE_SIZE && tileCol >= 0 && tileCol < OUT_TILE_SIZE){
-            float Pvalue = 0.0f;
-
-            for(int fRow = 0; fRow < 2 * FILTER_RADIUS +1; fRow++){
-                for(int fCol = 0; fCol < 2 * FILTER_RADIUS +1; fCol++){
-                    filterIndex = fRow * (2*FILTER_RADIUS+1) + fCol;
-                    // Pvalue = M_s[fRow][fCol] * constFilter[filterIndex];
-                    Pvalue += M_s[threadIdx.y + fRow - FILTER_RADIUS][threadIdx.x + fCol - FILTER_RADIUS] * constFilter[filterIndex];
-                }
-            }
-            P[row * width + col] = Pvalue;
-
-            // if (threadIdx.x == 10 && threadIdx.y == 10 && blockIdx.x == 0 && blockIdx.y == 0) {
-            //        printf("HELLO from here :)\n");
-            //        printf("Pvlue %d\n", P[row * width + col]);
-            //     }
-
-            
-        }
-    }
-}
-
-
 torch::Tensor conv2d_torch_with_tiled_convolution(torch::Tensor input, torch::Tensor kernel, int r) {
     TORCH_CHECK(input.device().type() == torch::kCUDA, "Input must be a CUDA tensor");
     TORCH_CHECK(kernel.device().type() == torch::kCUDA, "Kernel must be a CUDA tensor");
@@ -133,7 +90,6 @@ torch::Tensor conv2d_torch_with_tiled_convolution(torch::Tensor input, torch::Te
 
     C10_CUDA_CHECK(cudaGetLastError());
     return output;
-
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

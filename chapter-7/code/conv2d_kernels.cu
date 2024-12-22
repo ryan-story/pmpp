@@ -51,24 +51,12 @@ __global__ void tiled_convolution_kernel(float *M, float *P, int r, int height, 
 
     __shared__ float M_s[IN_TILE_SIZE][IN_TILE_SIZE];
 
-    // printf("(%d %d) Row: %d Col: %d\n", threadIdx.y, threadIdx.x, row, col);
-
     if (row >= 0 && row < height && col >= 0 && col < width)
         M_s[threadIdx.y][threadIdx.x] = M[row * width + col];
     else {
         M_s[threadIdx.y][threadIdx.x] = 0.0;
     }
     __syncthreads();
-
-    // if (threadIdx.x == 0 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 1) {
-    //     printf("M_s matrix contents:\n");
-    //     for(int i = 0; i < IN_TILE_SIZE; i++) {
-    //         for(int j = 0; j < IN_TILE_SIZE; j++) {
-    //             printf("%.2f ", M_s[i][j]);
-    //         }
-    //         printf("\n");
-    //     }
-    // }
 
     int tileCol = threadIdx.x - FILTER_RADIUS;
     int tileRow = threadIdx.y - FILTER_RADIUS;
@@ -81,16 +69,10 @@ __global__ void tiled_convolution_kernel(float *M, float *P, int r, int height, 
             for(int fRow = 0; fRow < 2 * FILTER_RADIUS +1; fRow++){
                 for(int fCol = 0; fCol < 2 * FILTER_RADIUS +1; fCol++){
                     filterIndex = fRow * (2*FILTER_RADIUS+1) + fCol;
-                    // Pvalue = M_s[fRow][fCol] * constFilter[filterIndex];
                     Pvalue += M_s[threadIdx.y + fRow - FILTER_RADIUS][threadIdx.x + fCol - FILTER_RADIUS] * constFilter[filterIndex];
                 }
             }
             P[row * width + col] = Pvalue;
-
-            // if (threadIdx.x == 10 && threadIdx.y == 10 && blockIdx.x == 0 && blockIdx.y == 0) {
-            //        printf("HELLO from here :)\n");
-            //        printf("Pvlue %d\n", P[row * width + col]);
-            //     }
         }
     }
 }

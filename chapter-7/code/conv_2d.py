@@ -25,7 +25,7 @@ def main():
     device = "cuda"
     height = 4096*2
     width = 4096*2
-    r = 9
+    r = 9 #TODO make sure FILTER_RADIOUS is set correctly in the kernel header
     kernel_size = 2 * r + 1
     
     input_tensor = torch.randn(height, width, device=device, dtype=torch.float32)
@@ -34,13 +34,13 @@ def main():
     input_torch = input_tensor.unsqueeze(0).unsqueeze(0)  
     kernel_torch = kernel_tensor.unsqueeze(0).unsqueeze(0)
     
-    custom_output = conv2d_extension.conv2d_torch_with_constant_memory(input_tensor, kernel_tensor, r)
+    custom_output = conv2d_extension.conv2d_torch_with_tiled_convolution(input_tensor, kernel_tensor, r)
     
     torch_output = F.conv2d(input_torch, kernel_torch, padding=r).squeeze()
 
     assert torch.allclose(custom_output, torch_output, rtol=1e-5, atol=1e-5), "Your function output differs from torch."
 
-    custom_conv2d = partial(conv2d_extension.conv2d_torch_with_constant_memory,
+    custom_conv2d = partial(conv2d_extension.conv2d_torch_with_tiled_convolution,
                         input_tensor,
                         kernel_tensor,
                         r,

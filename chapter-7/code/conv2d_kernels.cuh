@@ -4,10 +4,10 @@
 
 #include <cuda_runtime.h>
 
-#define FILTER_RADIUS 1
+#define FILTER_RADIUS 9
 #define BLOCK_SIZE 32
 
-#define IN_TILE_SIZE 5
+#define IN_TILE_SIZE 32
 #define OUT_TILE_SIZE (IN_TILE_SIZE - 2*FILTER_RADIUS)
 
 // Use a macro to control where constant memory is defined
