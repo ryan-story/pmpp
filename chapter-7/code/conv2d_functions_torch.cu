@@ -6,7 +6,7 @@ inline unsigned int cdiv(unsigned int a, unsigned int b) {
     return (a + b - 1) / b;
 }
 
-torch::Tensor conv2d_torch(torch::Tensor input, torch::Tensor kernel, int padding) {
+torch::Tensor conv2d_torch(torch::Tensor input, torch::Tensor kernel, int r) {
     TORCH_CHECK(input.device().type() == torch::kCUDA, "Input must be a CUDA tensor");
     TORCH_CHECK(kernel.device().type() == torch::kCUDA, "Kernel must be a CUDA tensor");
     TORCH_CHECK(input.dtype() == torch::kFloat32, "Input must be float32");
@@ -14,8 +14,6 @@ torch::Tensor conv2d_torch(torch::Tensor input, torch::Tensor kernel, int paddin
 
     int height = input.size(0);
     int width = input.size(1);
-    int r = padding;
-
     auto output = torch::empty_like(input);
 
     const dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);

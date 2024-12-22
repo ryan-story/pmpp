@@ -18,6 +18,18 @@ def load_conv2d_extension():
         verbose=True,
         with_cuda=True
     )
+
+def get_filter_radius_from_header():
+    header_path = Path(__file__).parent / "conv2d_kernels.cuh"
+    
+    with open(header_path, 'r') as f:
+        for line in f:
+            if line.strip().startswith('#define FILTER_RADIUS'):
+                # Extract the value after #define FILTER_RADIUS
+                return int(line.split()[2])
+    
+    raise ValueError("FILTER_RADIUS not found in header file")
+
 @torch.inference_mode
 def main():
     conv2d_extension = load_conv2d_extension()
@@ -25,7 +37,8 @@ def main():
     device = "cuda"
     height = 4096*2
     width = 4096*2
-    r = 9 #TODO make sure FILTER_RADIOUS is set correctly in the kernel header
+    r = get_filter_radius_from_header() ##this is a hack we do so we don't have the same filter value in both files
+    print(f"R value: {r}")
     kernel_size = 2 * r + 1
     
     input_tensor = torch.randn(height, width, device=device, dtype=torch.float32)
