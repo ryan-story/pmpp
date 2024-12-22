@@ -9,5 +9,6 @@ inline unsigned int cdiv(unsigned int a, unsigned int b) {
 }
 
 void conv2d_with_constant_memory(float *M, float *F, float *P, int r, int height, int width);
+void conv2d_torch_with_tiled_convolution(float *M, float *F, float *P, int r, int height, int width);
 
 #endif
