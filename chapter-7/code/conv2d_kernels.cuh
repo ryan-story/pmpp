@@ -6,6 +6,7 @@
 
 #define FILTER_RADIUS 9
 #define BLOCK_SIZE 32
+#define TILE_SIZE 32
 
 #define IN_TILE_SIZE 32
 #define OUT_TILE_SIZE (IN_TILE_SIZE - 2*FILTER_RADIUS)
@@ -20,6 +21,7 @@ extern __constant__ float constFilter[(2*FILTER_RADIUS+1) * (2*FILTER_RADIUS+1)]
 __global__ void conv2d_kernel(float *M, float *F, float *P, int r, int height, int width);
 __global__ void conv2d_kernel_with_constant_memory(float *M, float *P, int r, int height, int width);
 __global__ void tiled_convolution_kernel(float *M, float *P, int r, int height, int width);
+__global__ void tiled_convolution_kernel_with_l2_caching(float *M, float *P, int r, int height, int width);
 
 cudaError_t initConstFilter(const float* filter, int r);
 

@@ -76,3 +76,50 @@ __global__ void tiled_convolution_kernel(float *M, float *P, int r, int height, 
         }
     }
 }
+
+__global__ void tiled_convolution_kernel_with_l2_caching(float *M, float *P, int r, int height, int width) {
+    int row = blockIdx.y * TILE_SIZE + threadIdx.y;
+    int col = blockIdx.x * TILE_SIZE + threadIdx.x;
+
+    __shared__ float M_s[TILE_SIZE][TILE_SIZE];
+
+    if (row < height && col < width)
+        M_s[threadIdx.y][threadIdx.x] = M[row * width + col];
+    else {
+        M_s[threadIdx.y][threadIdx.x] = 0.0;
+    }
+    __syncthreads();
+
+    int filterIndex;
+
+    if (row < height && col < width){
+            float Pvalue = 0.0f;
+            for(int fRow = 0; fRow < 2 * FILTER_RADIUS +1; fRow++){
+                for(int fCol = 0; fCol < 2 * FILTER_RADIUS +1; fCol++){
+                    
+                    // Calculate shared memory indices
+                    filterIndex = fRow * (2*FILTER_RADIUS+1) + fCol;
+                    int sy = threadIdx.y - FILTER_RADIUS + fRow;
+                    int sx = threadIdx.x - FILTER_RADIUS + fCol;
+
+                    //first the ones that we already put into the shared memory
+                    //check if it is within the tile that we are interested about
+                    if (sy >= 0 && sy < TILE_SIZE && sx >= 0 && sx < TILE_SIZE) {
+                        Pvalue += M_s[sy][sx] * constFilter[filterIndex];
+                    }
+                    // than the ones that (we hope) already are in the l2 cache cause the the access of neighbouring threads
+                    //but at first check if the values actually are within the matrix (the edge cases)
+                    else {
+                        // Global memory access for elements outside shared memory tile
+                        int gy = row - FILTER_RADIUS + fRow;
+                        int gx = col - FILTER_RADIUS + fCol;
+                    
+                        if (gy >= 0 && gy < height && gx >= 0 && gx < width) {
+                            Pvalue += M[gy * width + gx] * constFilter[filterIndex];
+                        }
+                    }
+                }
+            }
+            P[row * width + col] = Pvalue;
+        }
+}

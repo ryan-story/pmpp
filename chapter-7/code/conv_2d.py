@@ -35,8 +35,8 @@ def main():
     conv2d_extension = load_conv2d_extension()
     
     device = "cuda"
-    height = 4096*2
-    width = 4096*2
+    height = 4096
+    width = 4096
     r = get_filter_radius_from_header() ##this is a hack we do so we don't have the same filter value in both files
     print(f"R value: {r}")
     kernel_size = 2 * r + 1
@@ -46,14 +46,17 @@ def main():
     
     input_torch = input_tensor.unsqueeze(0).unsqueeze(0)  
     kernel_torch = kernel_tensor.unsqueeze(0).unsqueeze(0)
-    
-    custom_output = conv2d_extension.conv2d_torch_with_tiled_convolution(input_tensor, kernel_tensor, r)
-    
+
     torch_output = F.conv2d(input_torch, kernel_torch, padding=r).squeeze()
+    custom_output = conv2d_extension.conv2d_torch_with_tiled_convolution_utilizing_caching(input_tensor, kernel_tensor, r)
+
+    # print(custom_output[:10, :10])
+    # print()
+    # print(torch_output)
 
     assert torch.allclose(custom_output, torch_output, rtol=1e-5, atol=1e-5), "Your function output differs from torch."
 
-    custom_conv2d = partial(conv2d_extension.conv2d_torch_with_tiled_convolution,
+    custom_conv2d = partial(conv2d_extension.conv2d_torch_with_tiled_convolution_utilizing_caching,
                         input_tensor,
                         kernel_tensor,
                         r,

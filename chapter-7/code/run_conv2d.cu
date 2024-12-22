@@ -1,6 +1,7 @@
 // nvcc run_conv2d.cu conv2d_functions.cu conv2d_kernels.cu -o conv2d_program
 #include <iostream>
 #include <iomanip>
+#include <assert.h>
 
 #include "conv2d_kernels.cuh"
 #include "conv2d_functions.cuh"
@@ -24,6 +25,7 @@ int main(int argc, char const *argv[]) {
     };
     float P[size*size] = {0.0f};
     int r = 1;
+    assert(r == FILTER_RADIUS && "Runtime value r must match FILTER_RADIUS");
     float gaussian_kernel[(2*r+1)*(2*r+1)] = {
         1/16.f, 2/16.f, 1/16.f,
         2/16.f, 4/16.f, 2/16.f,
@@ -31,7 +33,7 @@ int main(int argc, char const *argv[]) {
     };
     
     // conv2d_with_constant_memory(M, gaussian_kernel, P, r, size, size);
-    conv2d_torch_with_tiled_convolution(M, gaussian_kernel, P, r, size, size);
+    conv2d_with_tiled_convolution_with_l2_caching(M, gaussian_kernel, P, r, size, size);
     printMatrix(P, size, size);
     
     return 0;
