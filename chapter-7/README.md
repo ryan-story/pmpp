@@ -90,6 +90,15 @@ neighbours. Each filter is `MxM` so there is in total `NxN x MxM` multiplication
 
 **c. How many multiplications are performed if ghost cells are not treated as multiplications?**
 
+This is pretty tricky to calculate. As we show in **5b**, if we consider the ghost cells to also be multiplication, we will have a total of `NxN x MxM` multiplications. This will be our baseline. If we don't treat ghost cells as multiplications, then we need to offset (reduce) this number by the number of multiplications that won't be conducted. 
+
+To estimate the number of these, let's start by looking at the calculations we did for **4b**. Similarly to the Conv1D example, for each row we would have `MxN` calculations minus `r x (r-1)` multiplications. Now, we have `N` rows, so this "saving" will be multiplied by `N`. Next, we not only have savings along the rows axis, but also across the column axis. So in the end we have savings of `2 x N x r x (r-1)` cells.
+
+ On top of that we need to account for the corner cells. Here, similarly to the calculations we did in **4b**, there will be `r` savings for the most "outer" cell, `r-1` for the second to last outer corner cell, etc. `r x (r-1) / 2` in total, times 4 corners.
+
+ So all in all, we have `NxN x MxM - (2 x N x r x (r-1)) - (2 x r x (r-1))` multiplications. 
+
+
 ### Exercise 6
 **Consider performing a 2D convolution on a rectangular matrix of size N₁ × N₂ with a rectangular mask of size M₁ × M₂:**
 
