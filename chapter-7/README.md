@@ -145,7 +145,7 @@ This brings us to the total of:
 
 `N₁ x N₂ x M₁ × M₂ - (N₁ x r₂ x (r₂+1) + N₂ x (r₁ x r₁+1) + [r₁(r₁+1)/2][r₂(r₂+1)/2])` multiplications. 
 
-![alt text](./2d_conv_N1_N2.png)
+![visualization of the corner for N1 N2 case](2d_conv_N1_N2.png)
 
 
 ### Exercise 7
