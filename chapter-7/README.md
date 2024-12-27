@@ -1,3 +1,41 @@
+# Chapter 7
+
+## Code
+
+We present the code for running different implementations of the conv2d kernel. Notably:
+
+- The naive convolution implementation
+- The naive implementation using the constant memory
+- The tiled version
+- The tiled version, utilizing the cache memory
+
+The kernels can be used in two ways, directly from C or via the Python (PyTorch) interface. 
+
+We organize the code to make use of the modular nature of CUDA programming. We split the codebase into the three main files.
+
+- [code/conv2d_kernels.cu](conv2d_kernels.cu) - Here are the implementations of the kernels themselves, shared between different functions. We split it like that to avoid writing the double implementations of the same kernels.
+- [code/conv2d_functions_torch.cu](conv2d_functions_torch.cu) - Here we have functions taking torch tensors as input, enabling us to use the kernels in the real-world PyTorch applications. These functions are called from [code/conv_2d.py]. (conv_2d.py)
+- [code/conv2d_functions.cu](conv2d_functions.cu) - Here we have the same functions as above, but just in C(uda), enabling us to call the functions without the Torch abstractions, just on the C data structures. These functions are called from [code/run_conv2d.cu]. (run_conv2d.cu)
+
+
+You can manually change the conv2d function called in the Python file; all of them share the same interface, so it is pretty straightforward.  To run the script, run:
+
+```bash
+python code/conv_2d.py
+```
+
+You can manually change the conv2d function that is called; all of them share the same interface, so it is pretty straightforward.  To run the program, compile it and execute it. 
+
+```
+nvcc run_conv2d.cu conv2d_functions.cu code/conv2d_kernels.cu -o conv2d_program
+
+./conv2d_program
+```
+
+You might need to change `#define FILTER_RADIUS 9` in [code/conv2d_kernels.cuh](conv2d_kernels.cuh) as it is hardcoded for the Python implementation, and for C, I run these with much smaller filter sizes. I have assets in place guarding it.
+
+## Exercises
+
 ### Exercise 1
 
 **Calculate the P[0] value in Fig. 7.3.**
