@@ -36,11 +36,11 @@ A spike detector or peak detector, it isolates each signal from its neighbours. 
 
 **d. [-1/2 0 1/2]**
 
-It is an edge detection kernel - it "fires" is there is a rapid value change between the neigbouring cells. If the cells are similar the values cancel out and it is 0. 
+It is an edge detection kernel—it "fires" if there is a rapid value change between the neighboring cells. If the cells are similar, the values cancel out, and it is 0. 
 
 **e. [1/3 1/3 1/3]**
 
-Signal averages the value based on the cell neighbours - we relace the value with the average of its neighborhood. This smoothing effect reduces noise and local variations in the signal by averaging each value with its immediate neighbors.
+Signal averages the value based on the cell neighbors—we replace the value with the average of its neighborhood. This smoothing effect reduces noise and local variations in the signal by averaging each value with its immediate neighbors.
 
 ### Exercise 4
 
@@ -52,7 +52,7 @@ The filter is of size `M` or in other words of size `2r + 1`. Meaning `r=(M-1)/2
 
 **b. How many multiplications are performed if ghost cells are treated as multiplications (by 0)?**
 
-For each element of the array we perform `M` mutiplications, there are `N` elements in the array so `M*N` multiplications. 
+For each element of the array, we perform `M` multiplications; there are `N` elements in the array, so `M*N` multiplications. 
 
 **c. How many multiplications are performed if ghost cells are not treated as multiplications?**
 
@@ -79,7 +79,7 @@ This formula makes sense because when `M = 1` (filter size = 1), `r = 0`, so we 
 
 **a. How many ghost cells are there in total?**
 
-The filter is of size `M` in each direction or in other worlds `M = 2r + 1`. `r = (M-1)/2`. There are `Nxr` ghost cells at each of 4 sides of the matix, so `4xNxr` in total, plus there is `rxr` ghost cells at each corner. So overall there are `4r x (N + r)` ghost cells in total.
+The filter is of size `M` in each direction, or in other words, `M = 2r + 1`. `r = (M-1)/2`. There are `Nxr` ghost cells at each of the 4 sides of the matrix, so `4xNxr` in total, plus there are `rxr` ghost cells at each corner. So overall there are `4r x (N + r)` ghost cells in total.
 
 
 **b. How many multiplications are performed if ghost cells are treated as multiplications (by 0)?**
@@ -90,21 +90,21 @@ neighbours. Each filter is `MxM` so there is in total `NxN x MxM` multiplication
 
 **c. How many multiplications are performed if ghost cells are not treated as multiplications?**
 
-This is pretty tricky to calculate. As we show in **5b**, if we consider the ghost cells to also be multiplication, we will have a total of `NxN x MxM` multiplications. This will be our baseline. If we don't treat ghost cells as multiplications, then we need to offset (reduce) this number by the number of multiplications that won't be conducted. 
+TThis is pretty tricky to calculate. As we show in **5b**, if we consider the ghost cells to also be multiplication, we will have a total of `NxN x MxM` multiplications. This will be our baseline. If we don't treat ghost cells as multiplications, then we need to offset (reduce) this number by the number of multiplications that won't be conducted. 
 
 To estimate the number of these, let's start by looking at the calculations we did for **4b**. Similarly to the Conv1D example, for each row we would have `MxN` calculations minus `r x (r+1)` multiplications. Now, we have `N` rows, so this "saving" will be multiplied by `N`. Next, we not only have savings along the rows axis, but also across the column axis. So in the end we have savings of `2 x N x r x (r+1)` cells.
 
- On top of that we need to account for the corner cells. Here it get's slighly complicated. For the mask applied to the cell at the corner, here we "loose" `r x r` operations, for a cell on the row below we "loose" `(r-1) x r` multiplications, for the one on the right we "loose" `r x (r-1)`, for a second cell at the diagonal we "loose" `(r-1) x (r-1)`, etc. 
+ On top of that we need to account for the corner cells. Here it gets slightly complicated. For the mask applied to the cell at the corner, here we "loose" `r x r` operations; for a cell on the row below, we "loose" `(r-1) x r` multiplications; for the one on the right, we "loose" `r x (r-1)`; for a second cell at the diagonal, we "loose" `(r-1) x (r-1)`, etc. 
 
  We can think about this as a discrete version of such an integral `∫₁ʳ ∫₁ʳ xy dy dx` where we go from 1 to r in both directions. 
 
 We know that `Σ(x=1 to n) x = n(n+1)/2`. 
 
-Therefore `Σ(x=1 to r) Σ(y=1 to r) xy = [Σ(x=1 to r) x][Σ(y=1 to r) y] = = [r(r+1)/2][r(r+1)/2] = [r(r+1)/2]²`
+Therefore, `Σ(x=1 to r) Σ(y=1 to r) xy = [Σ(x=1 to r) x][Σ(y=1 to r) y] = = [r(r+1)/2][r(r+1)/2] = [r(r+1)/2]²`
 
-For `r=1` we have 1, for `r=2` we have 9 etc. This makes sense. Remeber that we have 4 corners so we need to multiply it by 4. 
+For `r=1` we have 1, for `r=2` we have 9, etc. This makes sense. Remember that we have 4 corners, so we need to multiply it by 4. 
  
-Summing it it we have `NxN x MxM` multiplications minus what we loose at the edges (columns and rows so `x 2`) and minus what we loose at the four corners: `NxN x MxM - (2 x N x rx(r+1)) - 4xr(r+1)(2r+1)/6` multiplications. 
+Summing it up, we have `NxN x MxM` multiplications minus what we lose at the edges (columns and rows, so `x 2`) and minus what we lose at the four corners: `NxN x MxM - (2 x N x rx(r+1)) - 4xr(r+1)(2r+1)/6` multiplications. 
 
  See the visualization:
  ![alt text](2d_conv_NN.png)
@@ -116,37 +116,36 @@ Summing it it we have `NxN x MxM` multiplications minus what we loose at the edg
 
 **a. How many ghost cells are there in total?**
 
-The mask is of size `M₁ × M₂`. Let's that the notation that it has radius of `r₁` and `r₂`, where `r₁ = (M₁-1)/2` and `r₂=(M₂-1)/2`.    
+The mask is of size `M₁ × M₂`. Let's say that the notation that it has a radius of `r₁` and `r₂`, where `r₁ = (M₁-1)/2` and `r₂=(M₂-1)/2`.
 
-There are `N₁ x r₂` ghost cells on the left and `N₁ x r₂` cells on the right. There are `N₂ x r₁`ghost cells on the bottom and on top of the matix. So the total of `2 x (N₁ x r₂ + N₂ x r₁)` ghost cells sorrounding the matrix. Than there are also `r₁ x r₂` ghost cells at each of the four corners, bringing it to the total of `2 x (N₁ x r₂ + N₂ x r₁) + 4(r₁ x r₂)` ghost cells. 
+There are `N₁ x r₂` ghost cells on the left and `N₁ x r₂` cells on the right. There are `N₂ x r₁ghost cells on the bottom and on the top of the e matri  So the total of `2 x (N₁ x r₂ + N₂ x r₁)` ghost cells surrounding the matrix. Then there are also `r₁ x r₂` ghost cells at each of the four corners, bringing it to the total of `2 x (N₁ x r₂ + N₂ x r₁) + 4(r₁ x r₂)` ghost cells. 
 
 **b. How many multiplications are performed if ghost cells are treated as multiplications (by 0)?**
 
-If the ghost celss are treated as mutliplications it is fairly straighforward. We have a total of `N₁ x N₂` cells in the matrix, for each cell we do `M₁ × M₂` mutliplications bringing it to the total of `N₁ x N₂ x M₁ × M₂` multiplications.
+If the ghost cells are treated as multiplications, it is fairly straightforward. We have a total of `N₁ x N₂` cells in the matrix; for each cell, we do `M₁ × M₂` multiplications, bringing it to the total of `N₁ x N₂ x M₁ × M₂` multiplications.
 
 **c. How many multiplications are performed if ghost cells are not treated as multiplications?**
 
-This gets even more tricky than the the **5c**. Let's think step by step. 
+This gets even trickier than the **5c**. Let's think step by step. 
 
-As we shown in **6b** if ghost cells are treated as multiplications we have a total of `N₁ x N₂ x M₁ × M₂` multiplications, now let's offset it by calculating how much should we substract from this number if we were to not consider the ghost cells as multiplications. 
+As we showed in **6b**, if ghost cells are treated as multiplications, we have a total of `N₁ x N₂ x M₁ × M₂` multiplications. Now let's offset it by calculating how much we should subtract from this number if we were to not consider the ghost cells as multiplications. 
 
-For each row we need to substract `r₂ x (r₂+1)/2` multiplications on the right and `r₂ x (r₂+1)/2` on the left (same reasoning as in `4c`). We have `N₁` rows so it is total of `N₁ x r₂ x (r₂+1)` operations we need to substract. 
+For each row we need to subtract `r₂ x (r₂+1)/2` multiplications on the right and `r₂ x (r₂+1)/2` on the left (same reasoning as in `4c`). We have `N₁` rows, so it is a total of `N₁ x r₂ x (r₂+1)` operations we need to subtract. 
 
-Now we need to do the same for columns. We have `N₂` columns. For each one, on the top of the matrix we need to substract `r₁ x (r₁+1) / 2` multiplications and same for the ghost cells below the matrix. Total of `N₂ x (r₁ x r₁+1)` operations we need to substract. 
+Now we need to do the same for columns. We have `N₂` columns. For each one, on the top of the matrix, we need to subtract `r₁ x (r₁+1) / 2` multiplications and the same for the ghost cells below the matrix. A total of `N₂ x (r₁ x r₁+1)` operations we need to subtract. 
 
-Now the truly tricky part, calculating how many multiplications we "loose" at the corners. Similary to what we did in **5c** we can caluclate it as:
+Now the truly tricky part: calculating how many multiplications we "lose" at the corners. Similarly to what we did in **5c**, we can calculate it as:
 
 `Σ(x=1 to r₁) Σ(y=1 to r₂) [xy] = = [Σ(x=1 to r₁) x][Σ(y=1 to r₂) y] = [r₁(r₁+1)/2][r₂(r₂+1)/2]`
 
-Plus we need to remeber that we have four corners. 
+Plus we need to remember that we have four corners. 
 
 
 This brings us to the total of:
 
 `N₁ x N₂ x M₁ × M₂ - (N₁ x r₂ x (r₂+1) + N₂ x (r₁ x r₁+1) + [r₁(r₁+1)/2][r₂(r₂+1)/2])` multiplications. 
 
-![alt text](2d_conv_N1_N2.png)
-
+![alt text](./2d_conv_N1_N2.png)
 
 
 ### Exercise 7
