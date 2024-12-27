@@ -104,7 +104,6 @@ __global__ void TiledMatrixMulKernelColMajorOrder(float *M, float *N, float *P, 
         else
             Nds[ty][tx] = 0.0f;
 
-        __syncthreads(); // make sure everything is loaded to both tile matrices
         for (int k = 0; k < TILE_WIDTH; k++)
         {
             PValue += Mds[ty][k] * Nds[k][tx];
