@@ -106,7 +106,7 @@ __global__ void histo_private_kernel(char *data, unsigned int length, unsigned i
 }
 
 __global__ void histo_private_kernel_shared_memory(char *data, unsigned int length, unsigned int *histo){
-    // Initalize privatized bins in the shared memory
+    // Initialize privatized bins in the shared memory
     __shared__ unsigned int histo_s[NUM_BINS];
     for (unsigned int bin=threadIdx.x; bin<NUM_BINS; bin += blockDim.x){
         histo_s[bin] = 0u;
@@ -133,7 +133,7 @@ __global__ void histo_private_kernel_shared_memory(char *data, unsigned int leng
 }
 
 __global__ void histo_private_kernel_thread_coarsing(char *data, unsigned int length, unsigned int *histo){
-    // Initalize privatized bins in the shared memory
+    // Initialize privatized bins in the shared memory
     __shared__ unsigned int histo_s[NUM_BINS];
     for (unsigned int bin=threadIdx.x; bin<NUM_BINS; bin += blockDim.x){
         histo_s[bin] = 0u;
@@ -160,7 +160,7 @@ __global__ void histo_private_kernel_thread_coarsing(char *data, unsigned int le
 }
 
 __global__ void histo_private_kernel_thread_coarsing_and_coalesced_memory_accesss(char *data, unsigned int length, unsigned int *histo){
-    // Initalize privatized bins in the shared memory
+    // Initialize privatized bins in the shared memory
     __shared__ unsigned int histo_s[NUM_BINS];
     for (unsigned int bin=threadIdx.x; bin<NUM_BINS; bin += blockDim.x){
         histo_s[bin] = 0u;
@@ -169,7 +169,7 @@ __global__ void histo_private_kernel_thread_coarsing_and_coalesced_memory_access
 
     // Histogram
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    //coalesced memory acceess pattern
+    //coalesced memory access pattern
     for (unsigned int i = tid; i < length; i+= blockDim.x*gridDim.x){
         int alphabet_position = data[i] - 'a';
         if (alphabet_position >= 0 && alphabet_position < 26) {
@@ -397,7 +397,7 @@ int main(int argc, char const *argv[]) {
     printf("Average time: %.3f ms\n", private_thread_coarsing_time);
     // print_histogram_bins(histo_private_with_thread_coarsing, "Histogram values");
 
-    printf("\nParallel Private with thread coarsing and coalased memory access Implementation:\n");
+    printf("\nParallel Private with thread coarsing and coalesced memory access Implementation:\n");
     printf("Average time: %.3f ms\n", private_thread_coarsing_and_coalesced_memory_access_time);
     print_histogram_bins(histo_private_with_thread_coarsing_and_coalased_memory_access, "Histogram values");
 
