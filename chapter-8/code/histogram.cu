@@ -8,6 +8,7 @@
 
 #define BIN_SIZE 4
 #define NUM_BINS ((26 + BIN_SIZE - 1) / BIN_SIZE)  
+#define CFACTOR 4
 
 #define CUDA_CHECK(call) \
 do { \
@@ -53,6 +54,17 @@ char* generate_random_text(unsigned int length) {
     }
     text[length] = '\0';
     return text;
+}
+
+void print_histogram_bins(const unsigned int* histo, const char* label) {
+    printf("\n%s:\n", label);
+    for (int i = 0; i < NUM_BINS; i++) {
+        printf("Bin %d (letters %c-%c): %u\n",
+               i,
+               'a' + (i * BIN_SIZE),
+               'a' + min(25, (i + 1) * BIN_SIZE - 1),
+               histo[i]);
+    }
 }
 
 __global__ void histo_kernel(char *data, unsigned int length, unsigned int *histo) {
@@ -113,6 +125,33 @@ __global__ void histo_private_kernel_shared_memory(char *data, unsigned int leng
     }
 }
 
+__global__ void histo_private_kernel_thread_coarsing(char *data, unsigned int length, unsigned int *histo){
+    // Initalize privatized bins in the shared memory
+    __shared__ unsigned int histo_s[NUM_BINS];
+    for (unsigned int bin=threadIdx.x; bin<NUM_BINS; bin += blockDim.x){
+        histo_s[bin] = 0u;
+    }
+    __syncthreads();
+
+    // Histogram
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    for (unsigned int i=tid*CFACTOR; i < min((tid+1) * CFACTOR, length); ++i){
+        int alphabet_position = data[i] - 'a';
+        if (alphabet_position >= 0 && alphabet_position < 26) {
+            atomicAdd(&histo_s[alphabet_position/BIN_SIZE], 1);
+        }
+    }
+    __syncthreads();
+
+    // Commit to the global memory
+    for(unsigned int bin=threadIdx.x; bin < NUM_BINS; bin += blockDim.x){
+        unsigned int binValue = histo_s[bin];
+        if(binValue > 0){
+            atomicAdd(&histo[bin], binValue);
+        }
+    }
+}
+
 inline unsigned int cdiv(unsigned int a, unsigned int b) {
     return (a + b - 1) / b;
 }
@@ -148,7 +187,6 @@ void histogram_parallel_private(char *data, unsigned int length, unsigned int *h
     
     CUDA_CHECK(cudaMalloc((void**)&d_data, length * sizeof(char)));
     CUDA_CHECK(cudaMemcpy(d_data, data, length * sizeof(char), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMalloc((void**)&d_histo, NUM_BINS * sizeof(unsigned int)));
     CUDA_CHECK(cudaMalloc((void**)&d_histo, NUM_BINS * dimGrid.x * sizeof(unsigned int))); //here we allocate NUM_BINS for every block
     
     histo_private_kernel<<<dimGrid, dimBlock>>>(d_data, length, d_histo);
@@ -174,6 +212,28 @@ void histogram_parallel_private_with_shared_memory(char *data, unsigned int leng
     dim3 dimGrid(cdiv(length, dimBlock.x));
     
     histo_private_kernel_shared_memory<<<dimGrid, dimBlock>>>(d_data, length, d_histo);
+    
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaMemcpy(histo, d_histo, NUM_BINS * sizeof(unsigned int), cudaMemcpyDeviceToHost));
+    
+    CUDA_CHECK(cudaFree(d_data));
+    CUDA_CHECK(cudaFree(d_histo));
+}
+
+void histogram_parallel_with_thread_coarsing(char *data, unsigned int length, unsigned int *histo) {
+    char *d_data;
+    unsigned int *d_histo;
+    
+    CUDA_CHECK(cudaMalloc((void**)&d_data, length * sizeof(char)));
+    CUDA_CHECK(cudaMemcpy(d_data, data, length * sizeof(char), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc((void**)&d_histo, NUM_BINS * sizeof(unsigned int)));
+    CUDA_CHECK(cudaMemset(d_histo, 0, NUM_BINS * sizeof(unsigned int)));
+    
+    dim3 dimBlock(1024);
+    dim3 dimGrid(cdiv(length, dimBlock.x * CFACTOR)); //here we need to launch proportionally less threads
+    
+    histo_private_kernel_thread_coarsing<<<dimGrid, dimBlock>>>(d_data, length, d_histo);
     
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -233,6 +293,7 @@ int main(int argc, char const *argv[]) {
     unsigned int histo_sequential[NUM_BINS] = {0};
     unsigned int histo_private[NUM_BINS] = {0};
     unsigned int histo_private_with_shared_memory[NUM_BINS] = {0};
+    unsigned int histo_private_with_thread_coarsing[NUM_BINS] = {0};
     
     char* data = generate_random_text(length);
     if (data == NULL) {
@@ -243,67 +304,41 @@ int main(int argc, char const *argv[]) {
     printf("BIN_SIZE: %d\n", BIN_SIZE);
     printf("NUM_BINS: %d\n\n", NUM_BINS);
     
-    // Benchmark parallel version
     printf("Benchmarking parallel histogram...\n");
     float parallel_time = benchmark_histogram(histogram_parallel, data, length, histo_parallel);
     
-    // Benchmark parallel private version
     printf("Benchmarking parallel private histogram...\n");
     float private_time = benchmark_histogram(histogram_parallel_private, data, length, histo_private);
 
-    // Benchmark parallel private version with shared memory
     printf("Benchmarking parallel private histogram with shared memory...\n");
     float private_shared_memory_time = benchmark_histogram(histogram_parallel_private_with_shared_memory, data, length, histo_private_with_shared_memory);
+
+    printf("Benchmarking parallel private histogram with thread coarsing...\n");
+    float private_thread_coarsing_time = benchmark_histogram(histogram_parallel_with_thread_coarsing, data, length, histo_private_with_thread_coarsing);
     
-    // Benchmark sequential version
     printf("Benchmarking sequential histogram...\n");
     float sequential_time = benchmark_histogram(histogram_sequential, data, length, histo_sequential);
     
-    // Print results
     printf("\nResults:\n");
     printf("Parallel Implementation:\n");
     printf("Average time: %.3f ms\n", parallel_time);
-    // printf("Histogram values:\n");
-    // for (int i = 0; i < NUM_BINS; i++) {
-    //     printf("Bin %d (letters %c-%c): %u\n", 
-    //            i, 
-    //            'a' + (i * BIN_SIZE), 
-    //            'a' + min(25, (i + 1) * BIN_SIZE - 1), 
-    //            histo_parallel[i]);
-    // }
-    
+    // print_histogram_bins(histo_parallel, "Histogram values");
+
     printf("\nParallel Private Implementation:\n");
     printf("Average time: %.3f ms\n", private_time);
-    // printf("Histogram values:\n");
-    // for (int i = 0; i < NUM_BINS; i++) {
-    //     printf("Bin %d (letters %c-%c): %u\n", 
-    //            i, 
-    //            'a' + (i * BIN_SIZE), 
-    //            'a' + min(25, (i + 1) * BIN_SIZE - 1), 
-    //            histo_private[i]);
-    // }
+    // print_histogram_bins(histo_private, "Histogram values");
 
     printf("\nParallel Private with Shared memory Implementation:\n");
     printf("Average time: %.3f ms\n", private_shared_memory_time);
-    printf("Histogram values:\n");
-    // for (int i = 0; i < NUM_BINS; i++) {
-    //     printf("Bin %d (letters %c-%c): %u\n", 
-    //            i, 
-    //            'a' + (i * BIN_SIZE), 
-    //            'a' + min(25, (i + 1) * BIN_SIZE - 1), 
-    //            histo_private_with_shared_memory[i]);
-    // }
-    
+    // print_histogram_bins(histo_private_with_shared_memory, "Histogram values");
+
+    printf("\nParallel Private with thread coarsing Implementation:\n");
+    printf("Average time: %.3f ms\n", private_thread_coarsing_time);
+    // print_histogram_bins(histo_private_with_thread_coarsing, "Histogram values");
+
     printf("\nSequential Implementation:\n");
     printf("Average time: %.3f ms\n", sequential_time);
-    printf("Histogram values:\n");
-    // for (int i = 0; i < NUM_BINS; i++) {
-    //     printf("Bin %d (letters %c-%c): %u\n", 
-    //            i, 
-    //            'a' + (i * BIN_SIZE), 
-    //            'a' + min(25, (i + 1) * BIN_SIZE - 1), 
-    //            histo_sequential[i]);
-    // }
+    // print_histogram_bins(histo_sequential, "Histogram values");
     
     printf("\nSpeedups:\n");
     printf("Parallel vs Sequential: %.2fx\n", sequential_time / parallel_time);
@@ -311,11 +346,20 @@ int main(int argc, char const *argv[]) {
     printf("Parallel Private vs Parallel: %.2fx\n", parallel_time / private_time);
     printf("Parallel Private with Shared memory vs Sequential: %.2fx\n", sequential_time/ private_shared_memory_time );
     printf("Parallel Private with Shared memory vs Parallel: %.2fx\n", parallel_time / private_shared_memory_time );
-    printf("Parallel Private with Shared memory vs Parallel Private: %.2fx\n", private_time / private_shared_memory_time);
+    printf("Parallel Private with thread coarsing vs Sequential: %.2fx\n", sequential_time/ private_thread_coarsing_time );
+    printf("Parallel Private with thread coarsing vs Parallel: %.2fx\n", parallel_time / private_thread_coarsing_time );
+    printf("Parallel Private with thread coarsing vs Parallel Private: %.2fx\n", private_time / private_thread_coarsing_time);
+    printf("Parallel Private with thread coarsing vs Parallel Private with Shared memory: %.2fx\n", private_shared_memory_time / private_thread_coarsing_time);
     
     bool results_match = true;
     for (int i = 0; i < NUM_BINS; i++) {
-        if (histo_parallel[i] != histo_sequential[i] || histo_private[i] != histo_sequential[i] || histo_private[i] != histo_private_with_shared_memory[i]) {
+        bool bin_matches = 
+            histo_sequential[i] == histo_parallel[i] &&
+            histo_sequential[i] == histo_private[i] &&
+            histo_private[i] == histo_private_with_shared_memory[i] &&
+            histo_private_with_shared_memory[i] == histo_private_with_thread_coarsing[i];
+        
+        if (!bin_matches) {
             results_match = false;
             break;
         }
