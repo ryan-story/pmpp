@@ -1,4 +1,5 @@
 // nvcc histogram.cu -o histogram
+//#TODO fix the coalased spelling, fix that once we have with and once not with, 
 
 #include <cuda_runtime.h>
 #include <stdio.h>
@@ -9,6 +10,7 @@
 #define BIN_SIZE 4
 #define NUM_BINS ((26 + BIN_SIZE - 1) / BIN_SIZE)  
 #define CFACTOR 4
+#define BLOCKS_PER_SM 4
 
 #define CUDA_CHECK(call) \
 do { \
@@ -29,6 +31,12 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
         fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
         if (abort) exit(code);
     }
+}
+
+int getNumSMs() {
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);  // Get properties of device 0
+    return prop.multiProcessorCount;
 }
 
 void clear_l2() {
@@ -152,6 +160,34 @@ __global__ void histo_private_kernel_thread_coarsing(char *data, unsigned int le
     }
 }
 
+__global__ void histo_private_kernel_thread_coarsing_and_coalased_memory_accesss(char *data, unsigned int length, unsigned int *histo){
+    // Initalize privatized bins in the shared memory
+    __shared__ unsigned int histo_s[NUM_BINS];
+    for (unsigned int bin=threadIdx.x; bin<NUM_BINS; bin += blockDim.x){
+        histo_s[bin] = 0u;
+    }
+    __syncthreads();
+
+    // Histogram
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    //coalased memory acceess pattern
+    for (unsigned int i = tid; i < length; i+= blockDim.x*gridDim.x){
+        int alphabet_position = data[i] - 'a';
+        if (alphabet_position >= 0 && alphabet_position < 26) {
+            atomicAdd(&histo_s[alphabet_position/BIN_SIZE], 1);
+        }
+    }
+    __syncthreads();
+
+    // Commit to the global memory
+    for(unsigned int bin=threadIdx.x; bin < NUM_BINS; bin += blockDim.x){
+        unsigned int binValue = histo_s[bin];
+        if(binValue > 0){
+            atomicAdd(&histo[bin], binValue);
+        }
+    }
+}
+
 inline unsigned int cdiv(unsigned int a, unsigned int b) {
     return (a + b - 1) / b;
 }
@@ -243,6 +279,28 @@ void histogram_parallel_with_thread_coarsing(char *data, unsigned int length, un
     CUDA_CHECK(cudaFree(d_histo));
 }
 
+void histogram_parallel_thread_coarsing_and_coalased_memory_acess(char *data, unsigned int length, unsigned int *histo) {
+    char *d_data;
+    unsigned int *d_histo;
+    
+    CUDA_CHECK(cudaMalloc((void**)&d_data, length * sizeof(char)));
+    CUDA_CHECK(cudaMemcpy(d_data, data, length * sizeof(char), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc((void**)&d_histo, NUM_BINS * sizeof(unsigned int)));
+    CUDA_CHECK(cudaMemset(d_histo, 0, NUM_BINS * sizeof(unsigned int)));
+    
+    dim3 dimBlock(1024);
+    dim3 dimGrid(getNumSMs() * BLOCKS_PER_SM); //here we ensure that each SM has multiple units of work to process, so we can get some benefit for coarsing
+    
+    histo_private_kernel_thread_coarsing_and_coalased_memory_accesss<<<dimGrid, dimBlock>>>(d_data, length, d_histo);
+    
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaMemcpy(histo, d_histo, NUM_BINS * sizeof(unsigned int), cudaMemcpyDeviceToHost));
+    
+    CUDA_CHECK(cudaFree(d_data));
+    CUDA_CHECK(cudaFree(d_histo));
+}
+
 
 void histogram_sequential(char *data, unsigned int length, unsigned int *histo) {
     for(unsigned int i = 0; i < length; ++i) {
@@ -288,12 +346,13 @@ float benchmark_histogram(void (*func)(char*, unsigned int, unsigned int*),
 }
 
 int main(int argc, char const *argv[]) {
-    unsigned int length = 10000000;
+    unsigned int length = 100000000;
     unsigned int histo_parallel[NUM_BINS] = {0};
     unsigned int histo_sequential[NUM_BINS] = {0};
     unsigned int histo_private[NUM_BINS] = {0};
     unsigned int histo_private_with_shared_memory[NUM_BINS] = {0};
     unsigned int histo_private_with_thread_coarsing[NUM_BINS] = {0};
+    unsigned int histo_private_with_thread_coarsing_and_coalased_memory_access[NUM_BINS] = {0};
     
     char* data = generate_random_text(length);
     if (data == NULL) {
@@ -315,9 +374,12 @@ int main(int argc, char const *argv[]) {
 
     printf("Benchmarking parallel private histogram with thread coarsing...\n");
     float private_thread_coarsing_time = benchmark_histogram(histogram_parallel_with_thread_coarsing, data, length, histo_private_with_thread_coarsing);
+
+    printf("Benchmarking parallel private histogram with thread coarsing and coalased memory access...\n");
+    float private_thread_coarsing_and_coalased_memory_access_time = benchmark_histogram(histogram_parallel_thread_coarsing_and_coalased_memory_acess, data, length, histo_private_with_thread_coarsing_and_coalased_memory_access);
     
     printf("Benchmarking sequential histogram...\n");
-    float sequential_time = benchmark_histogram(histogram_sequential, data, length, histo_sequential);
+    float sequential_time = benchmark_histogram(histogram_sequential, data, length, histo_sequential, 10, 10);
     
     printf("\nResults:\n");
     printf("Parallel Implementation:\n");
@@ -336,20 +398,33 @@ int main(int argc, char const *argv[]) {
     printf("Average time: %.3f ms\n", private_thread_coarsing_time);
     // print_histogram_bins(histo_private_with_thread_coarsing, "Histogram values");
 
+    printf("\nParallel Private with thread coarsing and coalased memory access Implementation:\n");
+    printf("Average time: %.3f ms\n", private_thread_coarsing_and_coalased_memory_access_time);
+    print_histogram_bins(histo_private_with_thread_coarsing_and_coalased_memory_access, "Histogram values");
+
     printf("\nSequential Implementation:\n");
     printf("Average time: %.3f ms\n", sequential_time);
     // print_histogram_bins(histo_sequential, "Histogram values");
     
     printf("\nSpeedups:\n");
     printf("Parallel vs Sequential: %.2fx\n", sequential_time / parallel_time);
+
     printf("Parallel Private vs Sequential: %.2fx\n", sequential_time / private_time);
     printf("Parallel Private vs Parallel: %.2fx\n", parallel_time / private_time);
+
     printf("Parallel Private with Shared memory vs Sequential: %.2fx\n", sequential_time/ private_shared_memory_time );
     printf("Parallel Private with Shared memory vs Parallel: %.2fx\n", parallel_time / private_shared_memory_time );
-    printf("Parallel Private with thread coarsing vs Sequential: %.2fx\n", sequential_time/ private_thread_coarsing_time );
-    printf("Parallel Private with thread coarsing vs Parallel: %.2fx\n", parallel_time / private_thread_coarsing_time );
-    printf("Parallel Private with thread coarsing vs Parallel Private: %.2fx\n", private_time / private_thread_coarsing_time);
-    printf("Parallel Private with thread coarsing vs Parallel Private with Shared memory: %.2fx\n", private_shared_memory_time / private_thread_coarsing_time);
+
+    printf("Parallel with thread coarsing vs Sequential: %.2fx\n", sequential_time/ private_thread_coarsing_time );
+    printf("Parallel with thread coarsing vs Parallel: %.2fx\n", parallel_time / private_thread_coarsing_time );
+    printf("Parallel with thread coarsing vs Parallel Private: %.2fx\n", private_time / private_thread_coarsing_time);
+    printf("Parallel with thread coarsing vs Parallel Private with Shared memory: %.2fx\n", private_shared_memory_time / private_thread_coarsing_time);
+
+    printf("Parallel with thread coarsing and coalesced memory access vs Sequential: %.2fx\n", sequential_time/ private_thread_coarsing_and_coalased_memory_access_time );
+    printf("Parallel with thread coarsing and coalesced memory access vs Parallel: %.2fx\n", parallel_time / private_thread_coarsing_and_coalased_memory_access_time );
+    printf("Parallel with thread coarsing and coalesced memory access vs Parallel Private: %.2fx\n", private_time / private_thread_coarsing_and_coalased_memory_access_time);
+    printf("Parallel with thread coarsing and coalesced memory access vs Parallel Private with Shared memory: %.2fx\n", private_shared_memory_time / private_thread_coarsing_and_coalased_memory_access_time);
+    printf("Parallel with thread coarsing and coalesced memory access vs Parallel with thread coarsing: %.2fx\n", private_thread_coarsing_time / private_thread_coarsing_and_coalased_memory_access_time);
     
     bool results_match = true;
     for (int i = 0; i < NUM_BINS; i++) {
@@ -357,7 +432,8 @@ int main(int argc, char const *argv[]) {
             histo_sequential[i] == histo_parallel[i] &&
             histo_sequential[i] == histo_private[i] &&
             histo_private[i] == histo_private_with_shared_memory[i] &&
-            histo_private_with_shared_memory[i] == histo_private_with_thread_coarsing[i];
+            histo_private_with_shared_memory[i] == histo_private_with_thread_coarsing[i] &&
+            histo_private_with_thread_coarsing[i] == histo_private_with_thread_coarsing_and_coalased_memory_access[i];
         
         if (!bin_matches) {
             results_match = false;
