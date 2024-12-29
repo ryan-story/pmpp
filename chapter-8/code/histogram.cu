@@ -142,14 +142,14 @@ void histogram_parallel(char *data, unsigned int length, unsigned int *histo) {
 void histogram_parallel_private(char *data, unsigned int length, unsigned int *histo) {
     char *d_data;
     unsigned int *d_histo;
+
+    dim3 dimBlock(1024);
+    dim3 dimGrid(cdiv(length, dimBlock.x));
     
     CUDA_CHECK(cudaMalloc((void**)&d_data, length * sizeof(char)));
     CUDA_CHECK(cudaMemcpy(d_data, data, length * sizeof(char), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc((void**)&d_histo, NUM_BINS * sizeof(unsigned int)));
-    CUDA_CHECK(cudaMemset(d_histo, 0, NUM_BINS * sizeof(unsigned int)));
-    
-    dim3 dimBlock(1024);
-    dim3 dimGrid(cdiv(length, dimBlock.x));
+    CUDA_CHECK(cudaMalloc((void**)&d_histo, NUM_BINS * dimGrid.x * sizeof(unsigned int))); //here we allocate NUM_BINS for every block
     
     histo_private_kernel<<<dimGrid, dimBlock>>>(d_data, length, d_histo);
     
