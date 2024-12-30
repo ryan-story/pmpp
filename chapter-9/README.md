@@ -1,4 +1,4 @@
-# Chapter 8
+# Chapter 9
 
 ## Code
 
@@ -7,6 +7,8 @@ nvcc histogram.cu -o histogram
 
 ./histogram
 ```
+
+## Exercises
 
 ### Exercise 1
 **Assume that each atomic operation in a DRAM system has a total latency of 100 ns. What is the maximum throughput that we can get for atomic operations on the same global memory variable?**
