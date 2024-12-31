@@ -31,12 +31,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
     }
 }
 
-int getNumSMs() {
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, 0);  // Get properties of device 0
-    return prop.multiProcessorCount;
-}
-
 void clear_l2() {
     static int l2_clear_size = 0;
     static unsigned char* gpu_scratch_l2_clear = NULL;
@@ -48,7 +42,80 @@ void clear_l2() {
     gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
 }
 
-float simple_sequential_reduce_sum(float *data, int length){
+float benchmark_sum_reduction(float (*func)(float *, int),
+                            float *data, unsigned int length,
+                            int warmup = 25, int reps = 100){
+
+    for (int i = 0; i < warmup; ++i){
+        func(data, length);
+    }
+
+    cudaEvent_t iterStart, iterStop;
+    cudaEventCreate(&iterStart);
+    cudaEventCreate(&iterStop);
+
+    float totalTime_ms = 0.0f;
+
+    for(int i = 0; i < reps; ++i){
+        clear_l2();
+        cudaEventRecord(iterStart);
+        func(data, length);
+        cudaEventRecord(iterStop);
+        cudaEventSynchronize(iterStop);
+
+        float iterTime = 0.0f;
+        cudaEventElapsedTime(&iterTime, iterStart, iterStop);
+        totalTime_ms += iterTime;
+    }
+
+    cudaEventDestroy(iterStart);
+    cudaEventDestroy(iterStop);
+
+    return totalTime_ms / reps;
+}
+
+
+__global__ void simple_sum_reduction_kernel(float* input, float* output){
+    unsigned int i = 2 * threadIdx.x;
+
+    for (unsigned int stride = 1; stride <= blockDim.x; stride *= 2){
+        if (threadIdx.x % stride == 0){
+            input[i] += input[i + stride];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0)
+        *output = input[0];
+}
+
+float simple_parallel_sum_reduction(float *data, int length){
+    float total;
+    float *d_total;
+    float* d_data;
+
+     dim3 dimBlock(1024); //we always run this with as much threads in block as possible
+     dim3 dimGrid(1); //since the blocks can't communicate we are stuck for now with a single block
+
+     CUDA_CHECK(cudaMalloc((void**)&d_data, length * sizeof(float)));
+     CUDA_CHECK(cudaMalloc((void**)&d_total, sizeof(float)));
+
+     CUDA_CHECK(cudaMemcpy(d_data, data, length * sizeof(float), cudaMemcpyHostToDevice));
+
+    simple_sum_reduction_kernel<<<dimGrid, dimBlock>>>(d_data, d_total);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(&total, d_total, sizeof(float), cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_data));
+    CUDA_CHECK(cudaFree(d_total));
+
+    return total;
+}
+
+float sequential_sum_reduction(float *data, int length){
     float total = 0.0f;
     for(unsigned int i = 0; i < length; ++i){
         total += data[i];
@@ -57,18 +124,42 @@ float simple_sequential_reduce_sum(float *data, int length){
 }
 
 
-int main(int argc, char const *argv[])
-{
+int main(int argc, char const *argv[]) {
     unsigned int length = 2048;
-
-    float numbers[length];
+    float* numbers = (float*)malloc(length * sizeof(float));
+    
+    // Initialize data
     for(unsigned int i = 0; i < length; i++) {
         numbers[i] = 1.0f;
     }
 
-    float sequential_sum = simple_sequential_reduce_sum(numbers, length);
-
-    printf("Sequential sum %.2f\n", sequential_sum);
-
+    // Benchmark both implementations
+    printf("Benchmarking parallel sum reduction...\n");
+    float parallel_time = benchmark_sum_reduction(simple_parallel_sum_reduction, numbers, length);
+    float parallel_sum = simple_parallel_sum_reduction(numbers, length);
+    
+    printf("Benchmarking sequential sum reduction...\n");
+    float sequential_time = benchmark_sum_reduction(sequential_sum_reduction, numbers, length, 10, 10);
+    float sequential_sum = sequential_sum_reduction(numbers, length);
+    
+    // Print results
+    printf("\nResults:\n");
+    printf("Parallel Implementation:\n");
+    printf("Sum: %.2f\n", parallel_sum);
+    printf("Average time: %.3f ms\n", parallel_time);
+    
+    printf("\nSequential Implementation:\n");
+    printf("Sum: %.2f\n", sequential_sum);
+    printf("Average time: %.3f ms\n", sequential_time);
+    
+    printf("\nSpeedup:\n");
+    printf("Parallel vs Sequential: %.2fx\n", sequential_time / parallel_time);
+    
+    // Check if results match
+    const float epsilon = 1e-5;  // For floating point comparison
+    bool results_match = fabs(sequential_sum - parallel_sum) < epsilon;
+    printf("\nResults match: %s\n", results_match ? "Yes" : "No");
+    
+    free(numbers);
     return 0;
 }
