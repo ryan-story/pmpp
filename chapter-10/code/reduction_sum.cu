@@ -42,6 +42,12 @@ void clear_l2() {
     gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
 }
 
+bool is_close(float a, float b, float rtol = 1e-5, float atol = 1e-8) {
+    float diff = fabs(a - b);
+    float tolerance = atol + rtol * fabs(b);
+    return diff <= tolerance;
+}
+
 float benchmark_sum_reduction(float (*func)(float *, int),
                             float *data, unsigned int length,
                             int warmup = 25, int reps = 100){
@@ -128,12 +134,10 @@ int main(int argc, char const *argv[]) {
     unsigned int length = 2048;
     float* numbers = (float*)malloc(length * sizeof(float));
     
-    // Initialize data
     for(unsigned int i = 0; i < length; i++) {
         numbers[i] = 1.0f;
     }
 
-    // Benchmark both implementations
     printf("Benchmarking parallel sum reduction...\n");
     float parallel_time = benchmark_sum_reduction(simple_parallel_sum_reduction, numbers, length);
     float parallel_sum = simple_parallel_sum_reduction(numbers, length);
@@ -142,7 +146,6 @@ int main(int argc, char const *argv[]) {
     float sequential_time = benchmark_sum_reduction(sequential_sum_reduction, numbers, length, 10, 10);
     float sequential_sum = sequential_sum_reduction(numbers, length);
     
-    // Print results
     printf("\nResults:\n");
     printf("Parallel Implementation:\n");
     printf("Sum: %.2f\n", parallel_sum);
@@ -155,9 +158,7 @@ int main(int argc, char const *argv[]) {
     printf("\nSpeedup:\n");
     printf("Parallel vs Sequential: %.2fx\n", sequential_time / parallel_time);
     
-    // Check if results match
-    const float epsilon = 1e-5;  // For floating point comparison
-    bool results_match = fabs(sequential_sum - parallel_sum) < epsilon;
+    bool results_match = is_close(sequential_sum, parallel_sum);
     printf("\nResults match: %s\n", results_match ? "Yes" : "No");
     
     free(numbers);
