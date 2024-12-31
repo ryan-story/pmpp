@@ -95,6 +95,22 @@ __global__ void simple_sum_reduction_kernel(float* input, float* output){
         *output = input[0];
 }
 
+__global__ void covergent_sum_reduction_kernel(float* input, float* output){
+    unsigned int i = threadIdx.x;
+
+    for (unsigned int stride = blockDim.x; stride >= 1; stride /= 2){
+        if (threadIdx.x < stride){
+            input[i] += input[i + stride];
+        }
+        __syncthreads();
+    }
+
+    if (threadIdx.x == 0){
+        *output = input[0];
+    }
+}
+
+
 float simple_parallel_sum_reduction(float *data, int length){
     float total;
     float *d_total;
@@ -109,6 +125,32 @@ float simple_parallel_sum_reduction(float *data, int length){
      CUDA_CHECK(cudaMemcpy(d_data, data, length * sizeof(float), cudaMemcpyHostToDevice));
 
     simple_sum_reduction_kernel<<<dimGrid, dimBlock>>>(d_data, d_total);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(&total, d_total, sizeof(float), cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_data));
+    CUDA_CHECK(cudaFree(d_total));
+
+    return total;
+}
+
+float covergent_parallel_sum_reduction(float *data, int length){
+    float total;
+    float *d_total;
+    float* d_data;
+
+     dim3 dimBlock(1024); //we always run this with as much threads in block as possible
+     dim3 dimGrid(1); //since the blocks can't communicate we are stuck for now with a single block
+
+     CUDA_CHECK(cudaMalloc((void**)&d_data, length * sizeof(float)));
+     CUDA_CHECK(cudaMalloc((void**)&d_total, sizeof(float)));
+
+     CUDA_CHECK(cudaMemcpy(d_data, data, length * sizeof(float), cudaMemcpyHostToDevice));
+
+    covergent_sum_reduction_kernel<<<dimGrid, dimBlock>>>(d_data, d_total);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -138,28 +180,38 @@ int main(int argc, char const *argv[]) {
         numbers[i] = 1.0f;
     }
 
-    printf("Benchmarking parallel sum reduction...\n");
-    float parallel_time = benchmark_sum_reduction(simple_parallel_sum_reduction, numbers, length);
-    float parallel_sum = simple_parallel_sum_reduction(numbers, length);
+    printf("Benchmarking simple parallel sum reduction...\n");
+    float simple_parallel_time = benchmark_sum_reduction(simple_parallel_sum_reduction, numbers, length);
+    float simple_parallel_sum = simple_parallel_sum_reduction(numbers, length);
+    
+    printf("Benchmarking convergent parallel sum reduction...\n");
+    float convergent_parallel_time = benchmark_sum_reduction(covergent_parallel_sum_reduction, numbers, length);
+    float convergent_parallel_sum = covergent_parallel_sum_reduction(numbers, length);
     
     printf("Benchmarking sequential sum reduction...\n");
     float sequential_time = benchmark_sum_reduction(sequential_sum_reduction, numbers, length, 10, 10);
     float sequential_sum = sequential_sum_reduction(numbers, length);
     
     printf("\nResults:\n");
-    printf("Parallel Implementation:\n");
-    printf("Sum: %.2f\n", parallel_sum);
-    printf("Average time: %.3f ms\n", parallel_time);
+    printf("Simple Parallel Implementation:\n");
+    printf("Sum: %.2f\n", simple_parallel_sum);
+    printf("Average time: %.3f ms\n", simple_parallel_time);
+    
+    printf("\nConvergent Parallel Implementation:\n");
+    printf("Sum: %.2f\n", convergent_parallel_sum);
+    printf("Average time: %.3f ms\n", convergent_parallel_time);
     
     printf("\nSequential Implementation:\n");
     printf("Sum: %.2f\n", sequential_sum);
     printf("Average time: %.3f ms\n", sequential_time);
     
     printf("\nSpeedup:\n");
-    printf("Parallel vs Sequential: %.2fx\n", sequential_time / parallel_time);
+    printf("Simple Parallel vs Sequential: %.2fx\n", sequential_time / simple_parallel_time);
+    printf("Convergent Parallel vs Sequential: %.2fx\n", sequential_time / convergent_parallel_time);
     
-    bool results_match = is_close(sequential_sum, parallel_sum);
-    printf("\nResults match: %s\n", results_match ? "Yes" : "No");
+    bool results_match = is_close(sequential_sum, simple_parallel_sum) &&
+                         is_close(simple_parallel_sum, convergent_parallel_sum);
+    printf("\nAll results match: %s\n", results_match ? "Yes" : "No");
     
     free(numbers);
     return 0;
