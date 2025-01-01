@@ -109,4 +109,8 @@ __global__ void ConvergentSumReductionKernel(float* input, float* output) {
 
 **a. The unoptimized kernel in Fig. 10.6 is used.**. 
 
+![the new kernel visualization](exercise_6a_visualization.png)
+
 **b. The kernel optimized for coalescing and divergence in Fig. 10.9 is used.**
+
+![the new kernel visualization](exercise_6b_visualization.png)
