@@ -93,9 +93,32 @@ __global__ void ConvergentSumReductionKernel(float* input, float* output) {
 }
 ```
 
-
 ### Exercise 4
 **Modify the kernel in Fig. 10.15 to perform a max reduction instead of a sum reduction.**
+
+```cpp
+__global__ void CoarsenedMaxReductionKernel(float* input, float* output) {
+    __shared__ float input_s[BLOCK_DIM];
+    unsigned int segment = COARSE_FACTOR*2*blockDim.x*blockIdx.x;
+    unsigned int i = segment + threadIdx.x;
+    unsigned int t = threadIdx.x;
+    float maximum_value = input[i];
+    for(unsigned int tile = 1; tile < COARSE_FACTOR*2; ++tile) {
+        maximum_value = fmax(maximum_value, input[i + tile*BLOCK_DIM]);
+    }
+    input_s[t] = maximum_value;
+
+    for (unsigned int stride = blockDim.x/2; stride >= 1; stride /= 2){
+        __syncthreads();
+        if (t < stride) {
+            input_s[t] = fmax(input_s[t], input_s[t + stride]);
+        }
+    }
+    if (t == 0) {
+        atomicExch(output, fmax(*output, input_s[0]));
+    }
+}
+```
 
 ### Exercise 5
 **Modify the kernel in Fig. 10.15 to work for an arbitrary length input that is not necessarily a multiple of `COARSE_FACTOR*2*blockDim.x`. Add an extra parameter N to the kernel that represents the length of the input.**
