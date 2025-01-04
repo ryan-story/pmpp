@@ -2,7 +2,11 @@
 
 ## Code
 
+We implement various methods of calculating the values of the histogram, benchmark, and compare them in [histogram.cu](code/histogram.cu). To execute the benchmark run:
+
 ```bash
+cd code
+
 nvcc histogram.cu -o histogram
 
 ./histogram
