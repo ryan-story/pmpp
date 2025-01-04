@@ -96,7 +96,7 @@ __global__ void ConvergentSumReductionKernel(float* input, float* output) {
 Modified:
 
 ```cpp
-__global__ void covergent_sum_reduction_kernel(float* input, float* output){
+__global__ void covergent_sum_reduction_kernel_reversed(float* input, float* output){
     unsigned int i = threadIdx.x + blockDim.x;
     for (unsigned int stride = blockDim.x; stride >= 1; stride /= 2){
         //stride iterations remains the same, but we just use it to index the previous input to be taken
@@ -111,6 +111,8 @@ __global__ void covergent_sum_reduction_kernel(float* input, float* output){
     }
 }
 ```
+
+The `covergent_sum_reduction_kernel_reversed` kernel can be found implemented and tested in [reduction_sum_2048.cu](code/reduction_sum_2048.cu)
 
 ### Exercise 4
 **Modify the kernel in Fig. 10.15 to perform a max reduction instead of a sum reduction.**
@@ -141,6 +143,42 @@ __global__ void CoarsenedMaxReductionKernel(float* input, float* output) {
 
 ### Exercise 5
 **Modify the kernel in Fig. 10.15 to work for an arbitrary length input that is not necessarily a multiple of `COARSE_FACTOR*2*blockDim.x`. Add an extra parameter N to the kernel that represents the length of the input.**
+
+```cpp
+__global__ void coarsed_sum_reduction_kernel(float* input, float* output, int length){
+    __shared__ float input_s[BLOCK_DIM];
+    unsigned int segment = COARSE_FACTOR*2*blockDim.x*blockIdx.x;
+    unsigned int i = segment + threadIdx.x;
+    unsigned int t = threadIdx.x;
+    
+    float sum = 0.0f;
+    //we only execute this part if is is within an array, otherwise sum=0
+    if (i < length){
+        sum = input[i];
+    
+        for(unsigned int tile = 1; tile < COARSE_FACTOR*2; ++tile) {
+            //only add the ones actually in the array
+            if (i + tile*BLOCK_DIM < length) {
+                sum += input[i + tile*BLOCK_DIM];
+            }
+        }
+    }
+
+    input_s[t] = sum;
+    
+    for (unsigned int stride = blockDim.x/2; stride >= 1; stride /= 2){
+        __syncthreads();
+        if (t < stride) {
+            input_s[t] += input_s[t + stride];
+        }
+    }
+    if (t == 0) {
+        atomicAdd(output, input_s[0]);
+    }
+}
+```
+
+The `coarsed_sum_reduction_kernel` can be found implemented and tested in [reduction_sum.cu](code/reduction_sum.cu)
 
 ### Exercise 6
 **Assume that parallel reduction is to be applied on the following input array:**
