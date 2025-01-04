@@ -32,16 +32,19 @@ __global__ void coarsed_sum_reduction_kernel(float* input, float* output, int le
     unsigned int i = segment + threadIdx.x;
     unsigned int t = threadIdx.x;
     
-    if (i >= length) return;
+    float sum = 0.0f;
+    if (i < length){
+        sum = input[i];
     
-    float sum = input[i];
-    for(unsigned int tile = 1; tile < COARSE_FACTOR*2; ++tile) {
-        if (i + tile*BLOCK_DIM < length) {
-            sum += input[i + tile*BLOCK_DIM];
+        for(unsigned int tile = 1; tile < COARSE_FACTOR*2; ++tile) {
+            if (i + tile*BLOCK_DIM < length) {
+                sum += input[i + tile*BLOCK_DIM];
+            }
         }
     }
-    
+
     input_s[t] = sum;
+    
     for (unsigned int stride = blockDim.x/2; stride >= 1; stride /= 2){
         __syncthreads();
         if (t < stride) {
