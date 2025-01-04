@@ -1,3 +1,7 @@
+*
+!*.*
+!*/
+
 *.pyc
 
 # CUDA compiled files

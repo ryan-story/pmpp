@@ -1,9 +1,11 @@
 #include "reduction_common.cuh"
 
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
     if (code != cudaSuccess) {
-        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
+        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort) {
+            exit(code);
+        }
     }
 }
 
@@ -24,10 +26,8 @@ bool is_close(float a, float b, float rtol, float atol) {
     return diff <= tolerance;
 }
 
-float benchmark_sum_reduction(float (*func)(float *, int),
-                            float *data, unsigned int length,
-                            int warmup, int reps) {
-    for (int i = 0; i < warmup; ++i){
+float benchmark_sum_reduction(float (*func)(float*, int), float* data, unsigned int length, int warmup, int reps) {
+    for (int i = 0; i < warmup; ++i) {
         func(data, length);
     }
 
@@ -37,7 +37,7 @@ float benchmark_sum_reduction(float (*func)(float *, int),
 
     float totalTime_ms = 0.0f;
 
-    for(int i = 0; i < reps; ++i){
+    for (int i = 0; i < reps; ++i) {
         clear_l2();
         cudaEventRecord(iterStart);
         func(data, length);
@@ -55,9 +55,9 @@ float benchmark_sum_reduction(float (*func)(float *, int),
     return totalTime_ms / reps;
 }
 
-float sequential_sum_reduction(float *data, int length) {
+float sequential_sum_reduction(float* data, int length) {
     double total = 0.0;
-    for(unsigned int i = 0; i < length; ++i){
+    for (unsigned int i = 0; i < length; ++i) {
         total += data[i];
     }
     return (float)total;
