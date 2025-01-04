@@ -1,4 +1,4 @@
-# Chapter 8
+# Chapter 10
 
 ## Code
 
@@ -89,6 +89,25 @@ __global__ void ConvergentSumReductionKernel(float* input, float* output) {
     }
     if(threadIdx.x == 0) {
         *output = input[0];
+    }
+}
+```
+
+Modified:
+
+```cpp
+__global__ void covergent_sum_reduction_kernel(float* input, float* output){
+    unsigned int i = threadIdx.x + blockDim.x;
+    for (unsigned int stride = blockDim.x; stride >= 1; stride /= 2){
+        //stride iterations remains the same, but we just use it to index the previous input to be taken
+        if (blockDim.x - threadIdx.x <= stride){
+            input[i] += input[i - stride];
+        }
+        __syncthreads();
+    }
+    //take it from the last input
+    if (threadIdx.x == blockDim.x-1){
+        *output = input[i];
     }
 }
 ```
