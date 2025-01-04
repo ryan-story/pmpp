@@ -2,7 +2,7 @@
 
 ## Code
 
-For chapter 10 we implemented, benchmarked and tested all of the kernels listed. For coninvinece reasons we split the implementations into the two files, one with kernels running only for `2048` elements [reduction_sum_2048.cu](code/reduction_sum_2048.cu), and ones running for arrays of arbitrary length [reduction_sum.cu](code/reduction_sum.cu). 
+For chapter 10 we implemented, benchmarked, and tested all of the kernels listed. For convenience reasons, we split the implementations into the two files, one with kernels running only for `2048` elements [reduction_sum_2048.cu](code/reduction_sum_2048.cu) and the ones running for arrays of arbitrary length [reduction_sum.cu](code/reduction_sum.cu).
 
 ```bash
 cd code
@@ -22,7 +22,7 @@ nvcc reduction_sum.cu reduction_common.cu -o reduction_sum
 reduction_sum
 ```
 
-Additionaly for the purposes of the **Exercise 4** we implement a reduction max kernel that can be found in [reduction_max.cu](code/reduction_max.cu)
+Additionally, for the purposes of **Exercise 4**, we implement a reduction max kernel that can be found in [reduction_max.cu](code/reduction_max.cu).
 
 ```bash
 nvcc reduction_max.cu -o reduction_max
