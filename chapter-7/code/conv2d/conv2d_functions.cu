@@ -1,9 +1,10 @@
+#include <iomanip>
+#include <iostream>
+
 #include "conv2d_functions.cuh"
 #include "conv2d_kernels.cuh"
-#include <iostream>
-#include <iomanip>
 
-void conv2d_with_constant_memory(float *M, float *F, float *P, int r, int height, int width) {
+void conv2d_with_constant_memory(float* M, float* F, float* P, int r, int height, int width) {
     float *d_M, *d_P;
     cudaError_t error;
 
@@ -39,7 +40,7 @@ void conv2d_with_constant_memory(float *M, float *F, float *P, int r, int height
     cudaFree(d_P);
 }
 
-void conv2d_with_tiled_convolution(float *M, float *F, float *P, int r, int height, int width) {
+void conv2d_with_tiled_convolution(float* M, float* F, float* P, int r, int height, int width) {
     float *d_M, *d_P;
     cudaError_t error;
 
@@ -67,7 +68,7 @@ void conv2d_with_tiled_convolution(float *M, float *F, float *P, int r, int heig
     cudaMemset(d_P, 0, width * height * sizeof(float));
 
     dim3 dimBlock(IN_TILE_SIZE, IN_TILE_SIZE);
-    dim3 dimGrid(cdiv(width+2*FILTER_RADIUS, OUT_TILE_SIZE), cdiv(height+2*FILTER_RADIUS, OUT_TILE_SIZE));
+    dim3 dimGrid(cdiv(width + 2 * FILTER_RADIUS, OUT_TILE_SIZE), cdiv(height + 2 * FILTER_RADIUS, OUT_TILE_SIZE));
 
     tiled_convolution_kernel<<<dimGrid, dimBlock>>>(d_M, d_P, r, height, width);
 
@@ -76,7 +77,7 @@ void conv2d_with_tiled_convolution(float *M, float *F, float *P, int r, int heig
     cudaFree(d_P);
 }
 
-void conv2d_with_tiled_convolution_with_l2_caching(float *M, float *F, float *P, int r, int height, int width) {
+void conv2d_with_tiled_convolution_with_l2_caching(float* M, float* F, float* P, int r, int height, int width) {
     float *d_M, *d_P;
     cudaError_t error;
 
@@ -104,7 +105,7 @@ void conv2d_with_tiled_convolution_with_l2_caching(float *M, float *F, float *P,
     cudaMemset(d_P, 0, width * height * sizeof(float));
 
     dim3 dimBlock(IN_TILE_SIZE, IN_TILE_SIZE);
-    dim3 dimGrid(cdiv(width+2*FILTER_RADIUS, OUT_TILE_SIZE), cdiv(height+2*FILTER_RADIUS, OUT_TILE_SIZE));
+    dim3 dimGrid(cdiv(width + 2 * FILTER_RADIUS, OUT_TILE_SIZE), cdiv(height + 2 * FILTER_RADIUS, OUT_TILE_SIZE));
 
     tiled_convolution_kernel_with_l2_caching<<<dimGrid, dimBlock>>>(d_M, d_P, r, height, width);
 
