@@ -2,6 +2,34 @@
 
 ## Code
 
+For chapter 10 we implemented, benchmarked and tested all of the kernels listed. For coninvinece reasons we split the implementations into the two files, one with kernels running only for `2048` elements [reduction_sum_2048.cu](code/reduction_sum_2048.cu), and ones running for arrays of arbitrary length [reduction_sum.cu](code/reduction_sum.cu). 
+
+```bash
+cd code
+```
+
+To run the `reduction_sum_2048.cu`
+
+```bash
+nvcc reduction_sum_2048.cu reduction_common.cu -o reduction_sum_2048
+
+reduction_sum_2048
+```
+
+```bash
+nvcc reduction_sum.cu reduction_common.cu -o reduction_sum
+
+reduction_sum
+```
+
+Additionaly for the purposes of the **Exercise 4** we implement a reduction max kernel that can be found in [reduction_max.cu](code/reduction_max.cu)
+
+```bash
+nvcc reduction_max.cu -o reduction_max
+
+reduction_max
+```
+
 ## Exercises
 
 ### Exercise 1
@@ -140,6 +168,8 @@ __global__ void CoarsenedMaxReductionKernel(float* input, float* output) {
     }
 }
 ```
+
+The `CoarsenedMaxReductionKernel` can be found implemented and tested in [reduction_max.cu](code/reduction_max.cu).
 
 ### Exercise 5
 **Modify the kernel in Fig. 10.15 to work for an arbitrary length input that is not necessarily a multiple of `COARSE_FACTOR*2*blockDim.x`. Add an extra parameter N to the kernel that represents the length of the input.**

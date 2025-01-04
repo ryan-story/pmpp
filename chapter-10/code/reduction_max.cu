@@ -1,4 +1,4 @@
-//nvcc reduction_max.cu -o reduction_max
+// nvcc reduction_max.cu -o reduction_max
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <stdlib.h>
