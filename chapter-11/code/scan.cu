@@ -64,7 +64,7 @@ __global__ void kogge_stone_scan_kernel_with_double_buffering(float *X, float *Y
     }
     for (unsigned int stride = 1; stride < blockDim.x; stride *= 2){
         __syncthreads();
-        if (tid >= stride) {  // Add boundary check
+        if (tid >= stride) {
             trg_buffer[tid] = src_buffer[tid] + src_buffer[tid - stride];
         } else {
             trg_buffer[tid] = src_buffer[tid];
@@ -82,7 +82,46 @@ __global__ void kogge_stone_scan_kernel_with_double_buffering(float *X, float *Y
 }
 
 
-// PyTorch-like allclose function
+__global__ void brent_kung_scan_kernel(float *X, float *Y, unsigned int N){
+    //1 thread processes two elements
+    unsigned int i = 2 * threadIdx.x;
+
+    //move data from the global memory to the shared memory in a coalesced way
+    __shared__ float buffer[SECTION_SIZE];
+     if (i < N){
+        buffer[i] = X[i];
+     }
+     if (i + 1 < N){
+        buffer[i + 1] = X[i +1];
+     }
+
+    //reduction tree
+    for (unsigned int stride=1; stride <= blockDim.x; stride *= 2){
+        int index = (threadIdx.x + 1) * stride * 2 - 1;
+        if (index < SECTION_SIZE){
+            buffer[index] += buffer[index - stride];
+        }
+        __syncthreads();
+    }
+
+    //reversed tree
+    for (unsigned int stride = SECTION_SIZE/4; stride >= 1; stride /= 2){
+        int index = (threadIdx.x + 1) * stride * 2 - 1;
+        if (index + stride < SECTION_SIZE){
+            buffer[index + stride] += buffer[index];            
+        }
+        __syncthreads();
+    }
+
+    if (i < N){
+        Y[i] = buffer[i];
+    }
+    if (i + 1 < N){
+        Y[i + 1] = buffer[i + 1];
+    }
+}
+
+
 bool allclose(float* a, float* b, int N, float rtol = 1e-5, float atol = 1e-8) {
     for(int i = 0; i < N; i++) {
         float allowed_error = atol + rtol * fabs(b[i]);
@@ -110,7 +149,7 @@ void scan_via_kogge_stone(float *X, float *Y, unsigned int N){
 
     CUDA_CHECK(cudaMemcpy(d_X, X, N * sizeof(float), cudaMemcpyHostToDevice));    
 
-    kogge_stone_scan_kernel_with_double_buffering<<<dimGrid, dimBlock>>>(d_X, d_Y, N);
+    kogge_stone_scan_kernel<<<dimGrid, dimBlock>>>(d_X, d_Y, N);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -144,6 +183,31 @@ void scan_via_kogge_stone_with_double_buffering(float *X, float *Y, unsigned int
     
     CUDA_CHECK(cudaFree(d_X));
     CUDA_CHECK(cudaFree(d_Y));
+}
+
+void scan_via_brent_kung(float *X, float *Y, unsigned int N){
+    assert(N == SECTION_SIZE && "Length must be equal to SECTION_SIZE");
+
+    float* d_X;
+    float* d_Y;
+
+    dim3 dimBlock(SECTION_SIZE/2); //every thread processing two elements
+    dim3 dimGrid(1);
+
+    CUDA_CHECK(cudaMalloc((void**)&d_X, N * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void**)&d_Y, N * sizeof(float)));
+
+    CUDA_CHECK(cudaMemcpy(d_X, X, N * sizeof(float), cudaMemcpyHostToDevice));    
+
+    brent_kung_scan_kernel<<<dimGrid, dimBlock>>>(d_X, d_Y, N);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(Y, d_Y, N * sizeof(float), cudaMemcpyDeviceToHost));
+    
+    CUDA_CHECK(cudaFree(d_X));
+    CUDA_CHECK(cudaFree(d_Y));
 }   
 
 
@@ -159,6 +223,7 @@ int main() {
     float* X = (float*)malloc(length * sizeof(float));
     float* Y_kogge_stone = (float*)malloc(length * sizeof(float));
     float* Y_kogge_stone_double = (float*)malloc(length * sizeof(float));
+    float* Y_brent_kung = (float*)malloc(length * sizeof(float));
     float* Y_sequential = (float*)malloc(length * sizeof(float));
     
     for (unsigned int i = 0; i < length; i++) {
@@ -168,6 +233,7 @@ int main() {
     
     scan_via_kogge_stone(X, Y_kogge_stone, length);
     scan_via_kogge_stone_with_double_buffering(X, Y_kogge_stone_double, length);
+    scan_via_brent_kung(X, Y_brent_kung, length);
     sequential_inclusive_scan(X, Y_sequential, length);
     
     printf("Kogge Stone Scan results:           [");
@@ -179,6 +245,12 @@ int main() {
     printf("Kogge Stone Double Buffer results:  [");
     for (unsigned int i = 0; i < length; i++) {
         printf("%.2f%s", Y_kogge_stone_double[i], (i < length-1) ? ", " : "");
+    }
+    printf("]\n");
+
+    printf("Brent-Kung Scan results:           [");
+    for (unsigned int i = 0; i < length; i++) {
+        printf("%.2f%s", Y_brent_kung[i], (i < length-1) ? ", " : "");
     }
     printf("]\n");
 
@@ -202,10 +274,18 @@ int main() {
     } else {
         printf("Arrays differ significantly!\n");
     }
+
+    printf("\nComparing Brent-Kung with sequential:\n");
+    if(allclose(Y_brent_kung, Y_sequential, length)) {
+        printf("Arrays are close enough!\n");
+    } else {
+        printf("Arrays differ significantly!\n");
+    }
     
     free(X);
     free(Y_kogge_stone);
     free(Y_kogge_stone_double);
+    free(Y_brent_kung);
     free(Y_sequential);
     return 0;
 }
