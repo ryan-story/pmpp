@@ -8,7 +8,7 @@
 
 #define cdiv(x, y) (((x) + (y) - 1)/(y))
 
-#define COARSE_FACTOR 2
+#define COARSE_FACTOR 4
 
 
 #define CUDA_CHECK(call)                                                                                 \
@@ -88,112 +88,113 @@ __global__ void kogge_stone_scan_kernel_with_double_buffering(float *X, float *Y
 
 
 __global__ void brent_kung_scan_kernel(float *X, float *Y, unsigned int N) {
-    extern __shared__ float buffer[];
+    extern __shared__ float sdata[];
     
     unsigned int tid = threadIdx.x;
     
     // Load input into shared memory
     if (tid < N) {
-        buffer[tid] = X[tid];
+        sdata[tid] = X[tid];
     } else {
-        buffer[tid] = 0.0;
+        sdata[tid] = 0;
     }
     __syncthreads();
 
     // Up-sweep phase (reduction)
-    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
-        int i = (tid + 1) * 2 * stride - 1;
+    for (unsigned int offset = 1; offset < blockDim.x; offset *= 2) {
+        int i = (tid + 1) * 2 * offset - 1;
         if (i < blockDim.x) {
-            buffer[i] += buffer[i - stride];
+            int j = i - offset;
+            sdata[i] += sdata[j];
         }
         __syncthreads();
     }
 
-    // Clear last element
+    // Store total sum and clear last element
     if (tid == 0) {
-        buffer[blockDim.x - 1] = 0;
+        sdata[blockDim.x - 1] = 0;
     }
     __syncthreads();
 
     // Down-sweep phase
-    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
-        int i = (tid + 1) * 2 * stride - 1;
+    for (int offset = blockDim.x / 2; offset > 0; offset /= 2) {
+        int i = (tid + 1) * 2 * offset - 1;
         if (i < blockDim.x) {
-            float temp = buffer[i - stride];
-            buffer[i] = buffer[i - stride] + temp;
-            buffer[i - stride] = temp;
+            int j = i - offset;
+            float t = sdata[i];
+            sdata[i] = sdata[j] + t;
+            sdata[j] = t;
         }
         __syncthreads();
     }
 
-    // Write back to the global memory
+    // Write results - convert to inclusive scan
     if (tid < N) {
-        Y[tid] = buffer[tid] + X[tid];
+        Y[tid] = sdata[tid] + X[tid];
     }
 }
 
-__global__ void three_phases_scan_kernel(float *X, float *Y, unsigned int N){
+__global__ void three_phases_scan_kernel(float *X, float *Y, unsigned int N) {
     extern __shared__ float shared_mem[];
     float* buffer1 = shared_mem;
     float* sections_ends = &shared_mem[N];
-
-    //load the data from the global memory into the shared memory of the block in a coeleased manner
-    for (unsigned int i=0; i < COARSE_FACTOR; i++){
-        buffer1[threadIdx.x + blockDim.x * i] = X[threadIdx.x + blockDim.x * i];
-    }
-
-    //Phase 1: partial sequenntial scan via coarsening
-    for (unsigned int i=0; i < COARSE_FACTOR; i++){
-    unsigned int idx = threadIdx.x + blockDim.x * i;
-    if (idx > 0 && (idx/COARSE_FACTOR) == ((idx-1)/COARSE_FACTOR)) {  // Check if in same section
-            buffer1[idx] += buffer1[idx-1];
+    
+    // Phase 1: Load data
+    for (unsigned int i = 0; i < COARSE_FACTOR; i++) {
+        unsigned int idx = threadIdx.x * COARSE_FACTOR + i;
+        if (idx < N) {
+            buffer1[idx] = X[idx];
         }
     }
     __syncthreads();
-
-    //move the section ends into a seperate array
-    unsigned int sections_ends_id = threadIdx.x * COARSE_FACTOR + COARSE_FACTOR-1;
-    if (sections_ends_id < N){
-        sections_ends[threadIdx.x] = buffer1[sections_ends_id];
+    
+    // Local scan within each section
+    for (unsigned int i = 1; i < COARSE_FACTOR; i++) {
+        unsigned int idx = threadIdx.x * COARSE_FACTOR + i;
+        if (idx < N) {
+            buffer1[idx] += buffer1[idx - 1];
+        }
     }
     __syncthreads();
-
-    //Phase 2: perform the kogge stone scan at the end of the sections
+    
+    // Store section ends
+    if (threadIdx.x < N/COARSE_FACTOR) {
+        unsigned int section_end_idx = (threadIdx.x + 1) * COARSE_FACTOR - 1;
+        if (section_end_idx < N) {
+            sections_ends[threadIdx.x] = buffer1[section_end_idx];
+        }
+    }
+    __syncthreads();
+    
+    // Phase 2: Kogge-Stone scan on section ends
     unsigned int tid = threadIdx.x;
-    for (unsigned int stride = 1; stride < N/COARSE_FACTOR; stride *= 2){
+    unsigned int num_sections = (N + COARSE_FACTOR - 1) / COARSE_FACTOR;
+    
+    for (unsigned int stride = 1; stride < num_sections; stride *= 2) {
         float temp;
         __syncthreads();
-        if (tid >= stride){
-            //read
-            temp = sections_ends[tid] + sections_ends[tid - stride]; 
+        if (tid >= stride && tid < num_sections) {
+            temp = sections_ends[tid] + sections_ends[tid - stride];
         }
-        //make sure reading is done
         __syncthreads();
-        if (tid >= stride){
-            //write the updated version
+        if (tid >= stride && tid < num_sections) {
             sections_ends[tid] = temp;
         }
     }
     __syncthreads();
-
-    //Phase 3: distribute the calculated values back into the original array
-    for (unsigned int i = 0; i < COARSE_FACTOR; ++i){
+    
+    // Phase 3: Distribute section sums
+    for (unsigned int i = 0; i < COARSE_FACTOR; i++) {
         unsigned int idx = threadIdx.x * COARSE_FACTOR + i;
-        if (idx < N){
+        if (idx < N) {
             unsigned int section = idx / COARSE_FACTOR;
-            if (section > 0){
+            if (section > 0) {
                 buffer1[idx] += sections_ends[section-1];
             }
+            Y[idx] = buffer1[idx];
         }
     }
-    __syncthreads();
-
-    //back into the blobal memory
-    for (unsigned int i=0; i < COARSE_FACTOR; i++){
-        Y[threadIdx.x + blockDim.x * i] = buffer1[threadIdx.x + blockDim.x * i];
-    }
 }
-
 
 
 bool allclose(float* a, float* b, int N, float rtol = 1e-5, float atol = 1e-8) {
@@ -324,7 +325,7 @@ void sequential_inclusive_scan(float *X, float *Y, unsigned int N){
 }
 
 int main() {
-    unsigned int length = 6;
+    unsigned int length = 999; //works for arbitary numbers not just the powers of 2
     float* X = (float*)malloc(length * sizeof(float));
     float* Y_kogge_stone = (float*)malloc(length * sizeof(float));
     float* Y_kogge_stone_double = (float*)malloc(length * sizeof(float));
@@ -338,10 +339,10 @@ int main() {
     }
     
     sequential_inclusive_scan(X, Y_sequential, length);
-    // scan_via_kogge_stone(X, Y_kogge_stone, length);
-    // scan_via_kogge_stone_with_double_buffering(X, Y_kogge_stone_double, length);
+    scan_via_kogge_stone(X, Y_kogge_stone, length);
+    scan_via_kogge_stone_with_double_buffering(X, Y_kogge_stone_double, length);
     scan_via_brent_kung(X, Y_brent_kung, length);
-    // scan_via_three_phase_kernel(X, Y_three_phases, length);
+    scan_via_three_phase_kernel(X, Y_three_phases, length);
     
     // printf("Kogge Stone Scan results:           [");
     // for (unsigned int i = 0; i < length; i++) {
@@ -355,11 +356,11 @@ int main() {
     // }
     // printf("]\n");
 
-    printf("Brent-Kung Scan results:           [");
-    for (unsigned int i = 0; i < length; i++) {
-        printf("%.2f%s", Y_brent_kung[i], (i < length-1) ? ", " : "");
-    }
-    printf("]\n");
+    // printf("Brent-Kung Scan results:           [");
+    // for (unsigned int i = 0; i < length; i++) {
+    //     printf("%.2f%s", Y_brent_kung[i], (i < length-1) ? ", " : "");
+    // }
+    // printf("]\n");
 
     // printf("Three Phases Scan results:         [");
     // for (unsigned int i = 0; i < length; i++) {
@@ -367,26 +368,26 @@ int main() {
     // }
     // printf("]\n");
 
-    printf("Sequential Scan results:            [");
-    for (unsigned int i = 0; i < length; i++) {
-        printf("%.2f%s", Y_sequential[i], (i < length-1) ? ", " : "");
-    }
-    printf("]\n");
+    // printf("Sequential Scan results:            [");
+    // for (unsigned int i = 0; i < length; i++) {
+    //     printf("%.2f%s", Y_sequential[i], (i < length-1) ? ", " : "");
+    // }
+    // printf("]\n");
     
     printf("\nComparing results...\n");
-    // printf("Comparing regular Kogge Stone with sequential:\n");
-    // if(allclose(Y_kogge_stone, Y_sequential, length)) {
-    //     printf("Arrays are close enough!\n");
-    // } else {
-    //     printf("Arrays differ significantly!\n");
-    // }
+    printf("Comparing regular Kogge Stone with sequential:\n");
+    if(allclose(Y_kogge_stone, Y_sequential, length)) {
+        printf("Arrays are close enough!\n");
+    } else {
+        printf("Arrays differ significantly!\n");
+    }
 
-    // printf("\nComparing double buffered Kogge Stone with sequential:\n");
-    // if(allclose(Y_kogge_stone_double, Y_sequential, length)) {
-    //     printf("Arrays are close enough!\n");
-    // } else {
-    //     printf("Arrays differ significantly!\n");
-    // }
+    printf("\nComparing double buffered Kogge Stone with sequential:\n");
+    if(allclose(Y_kogge_stone_double, Y_sequential, length)) {
+        printf("Arrays are close enough!\n");
+    } else {
+        printf("Arrays differ significantly!\n");
+    }
 
     printf("\nComparing Brent-Kung with sequential:\n");
     if(allclose(Y_brent_kung, Y_sequential, length)) {
@@ -395,12 +396,12 @@ int main() {
         printf("Arrays differ significantly!\n");
     }
 
-    // printf("\nComparing Three Phases with sequential:\n");
-    // if(allclose(Y_three_phases, Y_sequential, length)) {
-    //     printf("Arrays are close enough!\n");
-    // } else {
-    //     printf("Arrays differ significantly!\n");
-    // }
+    printf("\nComparing Three Phases with sequential:\n");
+    if(allclose(Y_three_phases, Y_sequential, length)) {
+        printf("Arrays are close enough!\n");
+    } else {
+        printf("Arrays differ significantly!\n");
+    }
     
     free(X);
     free(Y_kogge_stone);
