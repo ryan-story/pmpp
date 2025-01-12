@@ -140,6 +140,33 @@ So all only in the first 5 iterations will there be control divergence.
 ### Exercise 4
 **For the Kogge-Stone scan kernel based on reduction trees, assume that we have 2048 elements. Which of the following gives the closest approximation of how many add operations will be performed?**
 
+I think we lack some part of this question here, but let's try to answer anyway. In the Kogge-Stone algorithm we will do two operations, per active thread per stride, addition—line 13—and saving to the buffer—line 16. We will try to calculate how many threads will be active throughout the execution of the kernel and multiply it by two operations to get the total number of operations. 
+
+Let's start by figuring out how many threads will be operating. We have 2048 elements; each thread processes a single element. Blocks can have at most 1024 elements, so we will have 2 blocks with 1024 threads each. Let's analyze now how many threads will be active per block.
+
+**For stride 1**: All of the threads but the thread `0` will be executed (see Exercise 3 to see why). So we will have 1023 active threads. 
+
+**For stride 2**: All of the threads but the threads `0, 1` will be executed. So we will have 1022 active threads. 
+
+**For stride 4**: All of the threads but the threads `0, 1, 2, 3` will be executed. So we will have 1020 active threads. 
+
+**For stride 8**: All of the threads but the threads `0, 1, 2, 3, 4, 5, 6, 7` will be executed. So we will have `1016` active threads. 
+
+**For stride 16**: All of the threads but the threads `[0, 15]` will be executed. So we will have `1008` active threads. 
+
+**For stride 32**: We will have `992` active threads. 
+
+**For stride 64**: We will have `960` active threads. 
+
+**For stride 128**: We will have `896` active threads. 
+
+**For stride 256**: We will have `768` active threads. 
+
+**For stride 512**: We will have `512` active threads. 
+
+**For stride 1024**: There will be no active threads since none satisfy the condition `threadIdx.x >= 1024`—the` last `threadIdx.x` in each block is `1023`.
+
+Let's combine these now: `1023 + 1022 + 1020 + 1016 + 1008 + 992 + 896 + 768 + 512 = 8257` active threads in total. Times two blocks times two operations per thread per stride, it takes us to the total of `8257 x 2 x 2 = 33028` operations.
 
 
 ### Exercise 5
