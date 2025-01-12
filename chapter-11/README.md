@@ -203,10 +203,73 @@ Let's combine these now: `1023 + 1022 + 1020 + 1016 + 1008 + 992 + 896 + 768 + 5
 ### Exercise 6
 **For the Brent-Kung scan kernel, assume that we have 2048 elements. How many add operations will be performed in both the reduction tree phase and the inverse reduction tree phase?**
 
+This is quite similar to **Exercise 3**. Let's also analyze it step by step and calculate how many operations we need. In the Brent-Kung algorithm, in contrast to the Kogge-Stone, every thread is initially processing two elements—meaning we can process 2048 elements with 1024 threads—so we only need a single block. 
+
+For the reduction tree phase, each active thread, in every stride iteration, will perform two operations, one addition and one substitution (into the `XY`). For the inverse reduction tree phase, each active thread, for every iteration, will also perform two such operations. 
+
+Now let's calculate the number of active threads for each phase so we can calculate the total number of operations. The important thing to look at is like 08 `index = (threadIdx.x + 1)*2*stride - 1`.
+
+**Reduction Tree Phase:**
+
+**For stride 1:** Thread 0 will be assigned to element 1, thread 1 to element 3, ... thread 1023 to element 2047—all of the 1024 threads will be active.
+
+**For stride 2:** Thread 0 will be assigned to element 3, thread 1 to element 7, ... thread 511 to element 2047—so only half of the threads—512 will be active.
+
+**For stride 4:** Thread 0 will be assigned element to element 7, thread 1 to element 15, ... thread 255 to element 2047—so 256 active threads.
+
+**For stride 8:** 128 active threads.
+
+**For stride 16:** 64 active threads.
+
+**For stride 32:** 32 active threads.
+
+**For stride 64:** 16 active threads.
+
+**For stride 128:** 8 active threads.
+
+**For stride 256:** 4 active threads.
+
+**For stride 512:** 2 active threads.
+
+**For stride 1024:** Just 1 active thread—thread 0, processing the element 2047. 
+
+Overall, `1024 + 512 + 256 + 128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = 2047` active threads throughout the reduction tree loop, times two operations per thread per stride, bringing us to the total of `2047 x 2 = 4094` operations.
+
+
+**Reversed Tree Phase:**
+
+**For stride 2048/4 = 512:** Thread 0 will be assigned to element `(threadIdx.x + 1)*2*stride - 1 + stride = 2*stride - 1 + stride = 1535`. Thread 1 will exceed the `SECTION_SIZE`, so it won't be activated. So 1 thread in total. 
+
+**For stride 256:** Thread 0 will be assigned to element `767`, thread 1 will be assigned to element `1279`, thread 2 will be assigned to 1791, and thread 3 to element `2303`. Thread 5 would exceed the `SECTION_SIZE`, so only 4 threads will be active. 
+
+**For stride 128:** Thread 0 will be assigned to element `383`, thread 1 to element `639`, ... thread 6 to the element 1919 (383 + 6*256), so a total of 7 threads are being executed. 
+
+**For stride 64:** Thread 0 will be assigned to element `191`, thread 1 to element `319`, ... thread 14 to element `1983` (191 + 14*128)—so 15 threads in total.
+
+**For stride 32:** Thread 0 will be assigned to element `95`, ... thread 30 to element 2015 (191 + 14*128)—so 31 threads in total.
+
+**For stride 16:** Thread 0: element `47` ... thread 62: element `2031`—so` 63 threads in total
+
+**For stride 8:** Thread 0: element `23` ... thread 126: element `2.039`, so 127 threads in total. 
+
+**For stride 4:** Thread 0: element `11` ... thread 253: element `2035`, so 254 threads in total.
+
+**For stride 2:** Thread 0: element `5` ... thread 508: element `2037`, 509 threads in total. 
+
+**For stride 1:** Thread 0: element `2` ... thread 1018: element `2038`, 1019 threads in total. 
+
+Bringing it total to `1 + 4 + 7 + 15 + 31 + 63 + 127 + 254 + 509 + 1019 = 2030` total active threads. Since each thread per stride is doing two operations, this will be `2030 x 2 = 4060` operations in the reversed tree phase.
+
+Combined, the Redicton tree and reversed tree will be `4094 + 4060 = 8154` operations.
 
 
 ### Exercise 7
 **Use the algorithm in Fig. 11.4 to complete an exclusive scan kernel.**
+
+I genuinly don't know what to do here :D. The `Fig. 11.4` is pretty self-explanatory, I don't see what I should do here.  
+
+
+![alt text](exercise7.png)
 
 ### Exercise 8
 **Complete the host code and all three kernels for the segmented parallel scan algorithm in Fig. 11.9.**
