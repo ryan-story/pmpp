@@ -43,7 +43,7 @@ Size       Sequential(ms)  Hierarchical(ms) Domino(ms)      Speedup-H  Speedup-D
 ### Exercise 1
 **Consider the following array: [4 6 7 1 2 8 5 2]. Perform a parallel inclusive prefix scan on the array, using the Kogge-Stone algorithm. Report the intermediate states of the array after each step.**
 
-![Excercise 1 visualization](exercise1.png)
+![Exercise 1 visualization](exercise1.png)
 
 ### Exercise 2
 **Modify the Kogge-Stone parallel scan kernel in Fig. 11.3 to use double-buffering instead of a second call to `__syncthreads()` to overcome the write-after-read race condition.**
