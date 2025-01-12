@@ -172,8 +172,38 @@ Let's combine these now: `1023 + 1022 + 1020 + 1016 + 1008 + 992 + 896 + 768 + 5
 ### Exercise 5
 **Consider the following array: [4 6 7 1 2 8 5 2]. Perform a parallel inclusive prefix scan on the array, using the Brent-Kung algorithm. Report the intermediate states of the array after each step.**
 
+```cpp
+01 __global__ void Brent_Kung_scan_kernel(float *X, float *Y, unsigned int N) {
+02     __shared__ float XY[SECTION_SIZE];
+03     unsigned int i = 2*blockIdx.x*blockDim.x + threadIdx.x;
+04     if(i < N) XY[threadIdx.x] = X[i];
+05     if(i + blockDim.x < N) XY[threadIdx.x + blockDim.x] = X[i + blockDim.x];
+06     for(unsigned int stride = 1; stride <= blockDim.x; stride *= 2) {//Reduction Tree 
+07         __syncthreads();
+08         unsigned int index = (threadIdx.x + 1)*2*stride - 1;
+09         if(index < SECTION_SIZE) {
+10             XY[index] += XY[index - stride];
+11         }
+12     }
+13     for(int stride = SECTION_SIZE/4; stride > 0; stride /= 2) {//Reverse Tree
+14         __syncthreads();
+15         unsigned int index = (threadIdx.x + 1)*stride*2 - 1;
+16         if(index + stride < SECTION_SIZE) {
+17             XY[index + stride] += XY[index];
+18         }
+19     }
+20     __syncthreads();
+21     if(i < N) Y[i] = XY[threadIdx.x];
+22     if(i + blockDim.x < N) Y[i + blockDim.x] = XY[threadIdx.x + blockDim.x];
+23 }
+```
+
+![Visualization of exercise 5](exercise5.png)
+
 ### Exercise 6
 **For the Brent-Kung scan kernel, assume that we have 2048 elements. How many add operations will be performed in both the reduction tree phase and the inverse reduction tree phase?**
+
+
 
 ### Exercise 7
 **Use the algorithm in Fig. 11.4 to complete an exclusive scan kernel.**
