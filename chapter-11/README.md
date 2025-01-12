@@ -2,6 +2,41 @@
 
 ## Code
 
+We implement all of the kernels described in this chapter. This includes being
+
+- Kogge-Stone scan
+- Kogge-Stone with double buffering scan
+- Brent-Kung scan
+- Three-phase scan
+
+The above implementations are located in [scan.cu](code/scan.cu). To execute the code, run:
+
+```bash
+nvcc scan.cu -o scan
+./scan
+```
+
+We also implemented the hierarchical kernel, capable of processing arrays of arbitrary length, and we benchmarked it against the traditional sequential scan kernel. Additionally, we implemented a kernel with a domino-like synchronization mechanism between the blocks. The implementation can be found in [hierarchical_scan.cu]. (code/hierarchical_scan.cu)
+
+To execute the code, run:
+
+```bash
+nvcc hierarchical_scan.cu -o hierarchical_scan
+./hierarchical_scan
+```
+
+The output should resemble this:
+
+```bash
+Benchmarking Scan Operations
+----------------------------
+Size       Sequential(ms)  Hierarchical(ms) Domino(ms)      Speedup-H  Speedup-D  Match   
+16384      0.002           0.135           0.135           0.01       0.01       ✓✓
+65536      0.088           0.196           0.220           0.45       0.40       ✓✓
+262144     0.790           0.521           0.589           1.52       1.34       ✓✓
+1048576    3.537           1.582           2.114           2.24       1.67       ✓✓
+```
+
 ## Exercises
 
 

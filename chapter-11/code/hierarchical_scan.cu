@@ -1,3 +1,5 @@
+// nvcc hierarchical_scan.cu -o hierarchical_scan
+
 #include <assert.h>
 #include <cuda_runtime.h>
 #include <stdlib.h>
