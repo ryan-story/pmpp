@@ -91,6 +91,50 @@ __global__ void kogge_stone_scan_kernel_with_double_buffering(float *X, float *Y
 ### Exercise 3
 **Analyze the Kogge-Stone parallel scan kernel in Fig. 11.3. Show that control divergence occurs only in the first warp of each block for stride values up to half of the warp size. That is, for warp size 32, control divergence will occur 5 iterations for stride values 1, 2, 4, 8, and 16.**
 
+```cpp
+01  __global__ void Kogge_Stone_scan_kernel(float *X, float *Y, unsigned int N){
+02      shared float XY[SECTION_SIZE];
+03      unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
+04      if(i < N) {
+05          XY[threadIdx.x] = X[i];
+06      } else {
+07          XY[threadIdx.x] = 0.0f;
+08      }
+09      for(unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
+10          syncthreads();
+11          float temp;
+12          if(threadIdx.x >= stride)
+13              temp = XY[threadIdx.x] + XY[threadIdx.x-stride];
+14          syncthreads();
+15          if(threadIdx.x >= stride)
+16              XY[threadIdx.x] = temp;
+17      }
+18      if(i < N) {
+19          Y[i] = XY[threadIdx.x];
+20      }
+21  }
+```
+
+Let's go through this in a step-by-step manner. 
+
+**For stride 1**: We will execute threads with `threadIdx.x >=`1`—so all of the threads in the block, but thread 0 will be executed. Meaning we will have control divergence only in warp 0, covering the threads `[0, 31]`. In all of the other warps in the block that cover threads `[32, 47], [48, 79], ... [991, 1023]`, all threads will execute the line 13 and line 16 instructions. 
+
+**For stride 2**: We will execute threads with `threadIdx.x >= 2`, so all of the threads in the block, but thread 0 and thread 1, will be executed. Meaning we will have control divergence only in warp 0, covering the threads `[0, 31]`. In all of the other warps in the block that cover threads `[32, 47], [48, 79], ... [991, 1023]`, all threads will execute the line 13 and line 16 instructions. 
+
+**For stride 4**: We will execute threads with `threadIdx.x >= 4`, so all of the threads in the block, but the threads 0, 1, 2, and 3 will be executed. Meaning we will have control divergence only in warp 0, covering the threads `[0, 31]`. As above, all of the other threads will be executed, so none of the other warps will have control divergence. 
+
+
+**For stride 8**: We will execute threads with `threadIdx.x >= 8`, so all of the threads in the block, but the threads 0, 1, 2, 3, 4, 5, 6, 7 will be executed. Meaning we will have control divergence only in warp 0, covering the threads `[0, 31]`. As above, all of the other threads will be executed, so none of the other warps will have control divergence. 
+
+**For stride 16**: We will execute threads with `threadIdx.x >= 16`, so all of the threads in the block, but the threads 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 will be executed. Rest same as above. 
+
+**For stride 32** Here it finally gets more interesting.  We will execute threads with `threadIdx.x >=`32`—meaning all threads in warp 0, covering the threads `[0, 31]`, will be inactive—so there will be no control divergence. The first thread index in warp 1 is ``32`—so in this thread, all of the threads in the warp, including the first thread, will be executed. Same for every following warp. There will be no control divergence there. 
+
+... the same will apply for **stride=64**—the first two warps skipped all of the other fully executed, **stride=128**, etc. 
+
+So all only in the first 5 iterations will there be control divergence. 
+
+*Here we assume that the block size is of max size of 1024, but in principle this will work exactly the same for even smaller blocks. 
 
 
 ### Exercise 4
