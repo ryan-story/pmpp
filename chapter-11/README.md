@@ -43,6 +43,8 @@ Size       Sequential(ms)  Hierarchical(ms) Domino(ms)      Speedup-H  Speedup-D
 ### Exercise 1
 **Consider the following array: [4 6 7 1 2 8 5 2]. Perform a parallel inclusive prefix scan on the array, using the Kogge-Stone algorithm. Report the intermediate states of the array after each step.**
 
+![Excercise 1 visualization](exercise1.png)
+
 ### Exercise 2
 **Modify the Kogge-Stone parallel scan kernel in Fig. 11.3 to use double-buffering instead of a second call to `__syncthreads()` to overcome the write-after-read race condition.**
 
@@ -89,8 +91,12 @@ __global__ void kogge_stone_scan_kernel_with_double_buffering(float *X, float *Y
 ### Exercise 3
 **Analyze the Kogge-Stone parallel scan kernel in Fig. 11.3. Show that control divergence occurs only in the first warp of each block for stride values up to half of the warp size. That is, for warp size 32, control divergence will occur 5 iterations for stride values 1, 2, 4, 8, and 16.**
 
+
+
 ### Exercise 4
 **For the Kogge-Stone scan kernel based on reduction trees, assume that we have 2048 elements. Which of the following gives the closest approximation of how many add operations will be performed?**
+
+
 
 ### Exercise 5
 **Consider the following array: [4 6 7 1 2 8 5 2]. Perform a parallel inclusive prefix scan on the array, using the Brent-Kung algorithm. Report the intermediate states of the array after each step.**
