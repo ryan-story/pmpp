@@ -87,58 +87,50 @@ __global__ void kogge_stone_scan_kernel_with_double_buffering(float *X, float *Y
 }
 
 
-__global__ void brent_kung_scan_kernel(float *X, float *Y, unsigned int N){
+__global__ void brent_kung_scan_kernel(float *X, float *Y, unsigned int N) {
     extern __shared__ float buffer[];
-    //1 thread processes two elements
-    unsigned int i = 2 * threadIdx.x;
-
-    //move data from the global memory to the shared memory in a coalesced way
-     if (i < N){
-        buffer[i] = X[i];
-        if (i + 1 < N){
-            buffer[i + 1] = X[i +1];
-        }
-     }
-     __syncthreads();
-
-    //reduction tree
-    for (unsigned int stride=1; stride <= blockDim.x; stride *= 2){
-        int index = (threadIdx.x + 1) * stride * 2 - 1;
-        if (index < N){
-            buffer[index] += buffer[index - stride];
-        }
-        __syncthreads();
-    }
-
-    if (threadIdx.x == 0) {
-        printf("Buffer after reduction tree:\n[");
-        for (int j = 0; j < N; j++) {
-            printf("%.2f", buffer[j]);
-            if (j < N-1) printf(", ");
-        }
-        printf("]\n");
+    
+    unsigned int tid = threadIdx.x;
+    
+    // Load input into shared memory
+    if (tid < N) {
+        buffer[tid] = X[tid];
+    } else {
+        buffer[tid] = 0.0;
     }
     __syncthreads();
 
-    // reversed tree
-    for (unsigned int stride = blockDim.x/2; stride > 0; stride /= 2){
-        int index = (threadIdx.x + 1) * stride * 2 - 1;
-        if(index + stride < N){
-            float temp = buffer[index];
-            buffer[index] = buffer[index - stride];
-            buffer[index + stride] += temp;
+    // Up-sweep phase (reduction)
+    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
+        int i = (tid + 1) * 2 * stride - 1;
+        if (i < blockDim.x) {
+            buffer[i] += buffer[i - stride];
         }
         __syncthreads();
     }
 
-    if (i < N){
-        Y[i] = buffer[i];
-        if (i + 1 < N){
-           Y[i + 1] = buffer[i + 1];
+    // Clear last element
+    if (tid == 0) {
+        buffer[blockDim.x - 1] = 0;
+    }
+    __syncthreads();
+
+    // Down-sweep phase
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+        int i = (tid + 1) * 2 * stride - 1;
+        if (i < blockDim.x) {
+            float temp = buffer[i - stride];
+            buffer[i] = buffer[i - stride] + temp;
+            buffer[i - stride] = temp;
         }
+        __syncthreads();
+    }
+
+    // Write back to the global memory
+    if (tid < N) {
+        Y[tid] = buffer[tid] + X[tid];
     }
 }
-
 
 __global__ void three_phases_scan_kernel(float *X, float *Y, unsigned int N){
     extern __shared__ float shared_mem[];
@@ -267,13 +259,19 @@ void scan_via_kogge_stone_with_double_buffering(float *X, float *Y, unsigned int
     CUDA_CHECK(cudaFree(d_Y));
 }
 
-void scan_via_brent_kung(float *X, float *Y, unsigned int N){
-    assert(N <= 2048 && "Length must be less than or equal to 2048"); //twice kogge stone
+void scan_via_brent_kung(float *X, float *Y, unsigned int N) {
+    assert(N <= 1024 && "Length must be less than or equal to 1024");
 
     float* d_X;
     float* d_Y;
 
-    dim3 dimBlock(cdiv(N, 2)); //every thread processing two elements
+    // We'll use power of 2 for block size
+    unsigned int blockSize = 1;
+    while (blockSize < N && blockSize < 1024) {
+        blockSize *= 2;
+    }
+
+    dim3 dimBlock(blockSize);
     dim3 dimGrid(1);
 
     CUDA_CHECK(cudaMalloc((void**)&d_X, N * sizeof(float)));
@@ -281,7 +279,7 @@ void scan_via_brent_kung(float *X, float *Y, unsigned int N){
 
     CUDA_CHECK(cudaMemcpy(d_X, X, N * sizeof(float), cudaMemcpyHostToDevice));    
 
-    brent_kung_scan_kernel<<<dimGrid, dimBlock, N * sizeof(float)>>>(d_X, d_Y, N);
+    brent_kung_scan_kernel<<<dimGrid, dimBlock, blockSize * sizeof(float)>>>(d_X, d_Y, N);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -326,7 +324,7 @@ void sequential_inclusive_scan(float *X, float *Y, unsigned int N){
 }
 
 int main() {
-    unsigned int length = 13;
+    unsigned int length = 6;
     float* X = (float*)malloc(length * sizeof(float));
     float* Y_kogge_stone = (float*)malloc(length * sizeof(float));
     float* Y_kogge_stone_double = (float*)malloc(length * sizeof(float));
