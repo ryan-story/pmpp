@@ -20,33 +20,99 @@
 
 // Phase 1: Block-level scan and collect block sums
 __global__ void hierarchical_kogge_stone_phase1(float *X, float *Y, float *S, unsigned int N) {
+    extern __shared__ float buffer[];
+
+    unsigned int tid = threadIdx.x;
+    unsigned int global_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    //load data into the shared memory, each thread loads its part
+    if (global_idx < N){
+        buffer[tid] = X[global_idx];
+    }
+    else{
+        buffer[tid] = 0.0f;
+    }
+
+    //kogge stone within the block
+    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2){
+        float temp;
+        __syncthreads();
+        if (tid >= stride){
+            temp = buffer[tid] + buffer[tid - stride];
+        }
+        __syncthreads();
+        if (tid >= stride){
+            buffer[tid] = temp;
+        }
+    }
+
+    // write back to the global memory
+    if (global_idx < N){
+        Y[global_idx] = buffer[tid];
+    }
+    
+    // store the final sum into the S array in global memory
+    if (tid == blockDim.x - 1){
+        S[blockIdx.x] = buffer[tid];
+    }
 
 }
 
 // Phase 2: Scan block sums
 __global__ void hierarchical_kogge_stone_phase2(float *S, unsigned int num_blocks) {
+    extern __shared__ float buffer[];
+    unsigned int tid = threadIdx.x;
 
+    // load into the shared memory
+
+    if (tid < num_blocks){
+        buffer[tid] = S[tid];
+    }
+    else{
+        buffer[tid] = 0.0f;
+    }
+
+    //kogge stone on the block sums
+    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2){
+        float temp;
+        __syncthreads();
+        
+        if (tid >= stride){
+            temp = buffer[tid] + buffer[tid - stride];
+        }
+        __syncthreads();
+
+        if (tid >= stride){
+            buffer[tid] = temp;
+        }
+    }
+
+    //write the results back into S
+    if (tid < num_blocks){
+        S[tid] = buffer[tid];
+    }
 }
 
 // Phase 3: Distribute block sums
 __global__ void hierarchical_kogge_stone_phase3(float *Y, float *S, unsigned int N) {
+    unsigned int global_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
+    if (global_idx < N && blockIdx.x > 0){
+        Y[global_idx] += S[blockIdx.x-1];
+    }
 }
 
 // Host function to coordinate the hierarchical scan
 void hierarchical_scan(float *X, float *Y, unsigned int N) {
     float *d_X, *d_Y, *d_S;
     
-    // Calculate grid dimensions
     unsigned int block_size = SECTION_SIZE;
-    unsigned int num_blocks = (N + block_size - 1) / block_size;
+    unsigned int num_blocks = cdiv(N, block_size);
     
-    // Allocate device memory
     CUDA_CHECK(cudaMalloc((void**)&d_X, N * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&d_Y, N * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void**)&d_S, num_blocks * sizeof(float)));
     
-    // Copy input data to device
     CUDA_CHECK(cudaMemcpy(d_X, X, N * sizeof(float), cudaMemcpyHostToDevice));
     
     // Phase 1: Block-level scan and collect block sums
@@ -63,16 +129,13 @@ void hierarchical_scan(float *X, float *Y, unsigned int N) {
     hierarchical_kogge_stone_phase3<<<num_blocks, block_size>>>(d_Y, d_S, N);
     CUDA_CHECK(cudaDeviceSynchronize());
     
-    // Copy result back to host
     CUDA_CHECK(cudaMemcpy(Y, d_Y, N * sizeof(float), cudaMemcpyDeviceToHost));
     
-    // Cleanup
     CUDA_CHECK(cudaFree(d_X));
     CUDA_CHECK(cudaFree(d_Y));
     CUDA_CHECK(cudaFree(d_S));
 }
 
-// Sequential scan for verification
 void sequential_inclusive_scan(float *X, float *Y, unsigned int N) {
     Y[0] = X[0];
     for(unsigned int i = 1; i < N; i++) {
@@ -80,7 +143,6 @@ void sequential_inclusive_scan(float *X, float *Y, unsigned int N) {
     }
 }
 
-// Utility function to check if results match
 bool allclose(float* a, float* b, int N, float rtol = 1e-5, float atol = 1e-8) {
     for(int i = 0; i < N; i++) {
         float allowed_error = atol + rtol * fabs(b[i]);
@@ -94,7 +156,7 @@ bool allclose(float* a, float* b, int N, float rtol = 1e-5, float atol = 1e-8) {
 }
 
 int main() {
-    unsigned int length = 16384; 
+    unsigned int length = 2048; 
     float* X = (float*)malloc(length * sizeof(float));
     float* Y_hierarchical = (float*)malloc(length * sizeof(float));
     float* Y_sequential = (float*)malloc(length * sizeof(float));
