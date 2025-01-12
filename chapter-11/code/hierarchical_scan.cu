@@ -135,6 +135,122 @@ void hierarchical_scan(float *X, float *Y, unsigned int N) {
     gpuErrchk(cudaFree(d_S));
 }
 
+
+// Single-kernel domino-style scan implementation
+__global__ void hierarchical_kogge_stone_domino(
+    float *X,          
+    float *Y,          
+    float *scan_value, 
+    int *flags,        
+    int *blockCounter, 
+    unsigned int N     
+) {
+    extern __shared__ float buffer[];
+    __shared__ unsigned int bid_s;
+    __shared__ float previous_sum;
+    
+    const unsigned int tid = threadIdx.x;
+    
+    // DEADLOCK PREVENTION: Dynamic block index assignment
+    if (tid == 0) {
+        bid_s = atomicAdd(blockCounter, 1);
+    }
+    __syncthreads();
+    
+    const unsigned int bid = bid_s;
+    const unsigned int gid = bid * blockDim.x + tid;
+
+    // Phase 1: Local block scan using Kogge-Stone
+    if (gid < N) {
+        buffer[tid] = X[gid];
+    } else {
+        buffer[tid] = 0.0f;
+    }
+
+    // Kogge-Stone scan within block
+    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
+        __syncthreads();
+        float temp = buffer[tid];
+        if (tid >= stride) {
+            temp += buffer[tid - stride];
+        }
+        __syncthreads();
+        buffer[tid] = temp;
+    }
+
+    // Store local result
+    if (gid < N) {
+        Y[gid] = buffer[tid];
+    }
+
+    // Get local sum for this block
+    const float local_sum = buffer[blockDim.x - 1];
+
+    // Phase 2: Inter-block sum propagation
+    if (tid == 0) {
+        if (bid > 0) {
+            // Wait for previous block's flag
+            while (atomicAdd(&flags[bid], 0) == 0) { }
+            
+            // Get sum from previous block
+            previous_sum = scan_value[bid];
+            
+            // Add local sum and propagate
+            const float total_sum = previous_sum + local_sum;
+            scan_value[bid + 1] = total_sum;
+            
+            // Ensure scan_value is visible
+            __threadfence();
+            
+            // Signal next block
+            atomicAdd(&flags[bid + 1], 1);
+        } else {
+            // First block just propagates its sum
+            scan_value[1] = local_sum;
+            __threadfence();
+            atomicAdd(&flags[1], 1);
+        }
+    }
+    __syncthreads();
+
+    // Phase 3: Add previous block's sum to local results
+    if (bid > 0 && gid < N) {
+        Y[gid] += previous_sum;
+    }
+}
+
+void hierarchical_scan_with_domino_like_sync(float *X, float *Y, unsigned int N) {
+    float *d_X, *d_Y, *d_scan_value;
+    int *d_flags, *d_blockCounter;
+    
+    const unsigned int block_size = SECTION_SIZE;
+    const unsigned int num_blocks = cdiv(N, block_size);
+    
+    gpuErrchk(cudaMalloc((void**)&d_X, N * sizeof(float)));
+    gpuErrchk(cudaMalloc((void**)&d_Y, N * sizeof(float)));
+    gpuErrchk(cudaMalloc((void**)&d_scan_value, (num_blocks + 1) * sizeof(float)));
+    gpuErrchk(cudaMalloc((void**)&d_flags, (num_blocks + 1) * sizeof(int)));
+    gpuErrchk(cudaMalloc((void**)&d_blockCounter, sizeof(int)));
+    
+    gpuErrchk(cudaMemset(d_flags, 0, (num_blocks + 1) * sizeof(int)));
+    gpuErrchk(cudaMemset(d_blockCounter, 0, sizeof(int)));
+    
+    gpuErrchk(cudaMemcpy(d_X, X, N * sizeof(float), cudaMemcpyHostToDevice));
+    
+    hierarchical_kogge_stone_domino<<<num_blocks, block_size, block_size * sizeof(float)>>>(
+        d_X, d_Y, d_scan_value, d_flags, d_blockCounter, N);
+    gpuErrchk(cudaDeviceSynchronize());
+    
+    gpuErrchk(cudaMemcpy(Y, d_Y, N * sizeof(float), cudaMemcpyDeviceToHost));
+    
+    gpuErrchk(cudaFree(d_X));
+    gpuErrchk(cudaFree(d_Y));
+    gpuErrchk(cudaFree(d_scan_value));
+    gpuErrchk(cudaFree(d_flags));
+    gpuErrchk(cudaFree(d_blockCounter));
+}
+
+
 void sequential_inclusive_scan(float *X, float *Y, unsigned int N) {
     Y[0] = X[0];
     for(unsigned int i = 1; i < N; i++) {
@@ -206,41 +322,43 @@ int main() {
     
     printf("\nBenchmarking Scan Operations\n");
     printf("----------------------------\n");
-    printf("%-10s %-15s %-15s %-8s\n", 
-           "Size", "Sequential(ms)", "Hierarchical(ms)", "Speedup");
+    printf("%-10s %-15s %-15s %-15s %-10s %-10s %-8s\n", 
+           "Size", "Sequential(ms)", "Hierarchical(ms)", "Domino(ms)", 
+           "Speedup-H", "Speedup-D", "Match");
     
     for (int i = 0; i < num_sizes; i++) {
         unsigned int N = sizes[i];
         
-        // Allocate and initialize arrays
         float* X = (float*)malloc(N * sizeof(float));
         float* Y_sequential = (float*)malloc(N * sizeof(float));
         float* Y_hierarchical = (float*)malloc(N * sizeof(float));
+        float* Y_domino = (float*)malloc(N * sizeof(float));
         
-        // Initialize input array
         for (unsigned int j = 0; j < N; j++) {
             X[j] = 1.0f;
         }
         
-        // Benchmark both implementations
         float sequential_time = benchmark_scan(sequential_inclusive_scan, X, Y_sequential, N, warmup, reps);
         float hierarchical_time = benchmark_scan(hierarchical_scan, X, Y_hierarchical, N, warmup, reps);
+        float domino_time = benchmark_scan(hierarchical_scan_with_domino_like_sync, X, Y_domino, N, warmup, reps);
+
+        bool hier_match = allclose(Y_sequential, Y_hierarchical, N);
+        bool domino_match = allclose(Y_sequential, Y_domino, N);
         
-        // Verify results
-        bool results_match = allclose(Y_sequential, Y_hierarchical, N);
-        
-        // Print results with fixed-width formatting
-        printf("%-10u %-15.3f %-15.3f %.2f    %s\n",
+        printf("%-10u %-15.3f %-15.3f %-15.3f %-10.2f %-10.2f %s%s\n",
                N,
                sequential_time,
                hierarchical_time,
+               domino_time,
                sequential_time / hierarchical_time,
-               results_match ? "✓" : "✗");
+               sequential_time / domino_time,
+               hier_match ? "✓" : "✗",
+               domino_match ? "✓" : "✗");
         
-        // Cleanup
         free(X);
         free(Y_sequential);
         free(Y_hierarchical);
+        free(Y_domino);
     }
     return 0;
 }
