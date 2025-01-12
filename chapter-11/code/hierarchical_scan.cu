@@ -1,5 +1,3 @@
-// nvcc hierarchical_scan.cu -o hierarchical_scan
-
 #include <assert.h>
 #include <cuda_runtime.h>
 #include <stdlib.h>
@@ -9,14 +7,24 @@
 #define SECTION_SIZE 1024  // Maximum threads per block
 #define cdiv(x, y) (((x) + (y) - 1)/(y))
 
-#define CUDA_CHECK(call)                                                                                 \
-    do {                                                                                                 \
-        cudaError_t error = call;                                                                        \
-        if (error != cudaSuccess) {                                                                      \
-            fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(error)); \
-            exit(EXIT_FAILURE);                                                                          \
-        }                                                                                                \
-    } while (0)
+inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort) exit(code);
+    }
+}
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+
+void clear_l2() {
+    static int l2_clear_size = 0;
+    static unsigned char* gpu_scratch_l2_clear = NULL;
+    if (!gpu_scratch_l2_clear) {
+        cudaDeviceGetAttribute(&l2_clear_size, cudaDevAttrL2CacheSize, 0);
+        l2_clear_size *= 2;
+        gpuErrchk(cudaMalloc(&gpu_scratch_l2_clear, l2_clear_size));
+    }
+    gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
+}
 
 // Phase 1: Block-level scan and collect block sums
 __global__ void hierarchical_kogge_stone_phase1(float *X, float *Y, float *S, unsigned int N) {
@@ -25,71 +33,61 @@ __global__ void hierarchical_kogge_stone_phase1(float *X, float *Y, float *S, un
     unsigned int tid = threadIdx.x;
     unsigned int global_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    //load data into the shared memory, each thread loads its part
-    if (global_idx < N){
+    if (global_idx < N) {
         buffer[tid] = X[global_idx];
-    }
-    else{
+    } else {
         buffer[tid] = 0.0f;
     }
 
-    //kogge stone within the block
-    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2){
+    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
         float temp;
         __syncthreads();
-        if (tid >= stride){
+        if (tid >= stride) {
             temp = buffer[tid] + buffer[tid - stride];
         }
         __syncthreads();
-        if (tid >= stride){
+        if (tid >= stride) {
             buffer[tid] = temp;
         }
     }
 
-    // write back to the global memory
-    if (global_idx < N){
+    if (global_idx < N) {
         Y[global_idx] = buffer[tid];
     }
     
-    // store the final sum into the S array in global memory
-    if (tid == blockDim.x - 1){
+    if (tid == blockDim.x - 1) {
         S[blockIdx.x] = buffer[tid];
     }
-
 }
 
 // Phase 2: Scan block sums
 __global__ void hierarchical_kogge_stone_phase2(float *S, unsigned int num_blocks) {
     extern __shared__ float buffer[];
     unsigned int tid = threadIdx.x;
+    unsigned int global_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // load into the shared memory
-
-    if (tid < num_blocks){
-        buffer[tid] = S[tid];
-    }
-    else{
+    // Only process if within valid range
+    if (global_idx < num_blocks) {
+        buffer[tid] = S[global_idx];
+    } else {
         buffer[tid] = 0.0f;
     }
+    __syncthreads();
 
-    //kogge stone on the block sums
-    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2){
-        float temp;
+    for (unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
+        float temp = buffer[tid];
         __syncthreads();
         
-        if (tid >= stride){
-            temp = buffer[tid] + buffer[tid - stride];
+        if (tid >= stride) {
+            temp += buffer[tid - stride];
         }
         __syncthreads();
-
-        if (tid >= stride){
-            buffer[tid] = temp;
-        }
+        
+        buffer[tid] = temp;
     }
 
-    //write the results back into S
-    if (tid < num_blocks){
-        S[tid] = buffer[tid];
+    if (global_idx < num_blocks) {
+        S[global_idx] = buffer[tid];
     }
 }
 
@@ -97,43 +95,44 @@ __global__ void hierarchical_kogge_stone_phase2(float *S, unsigned int num_block
 __global__ void hierarchical_kogge_stone_phase3(float *Y, float *S, unsigned int N) {
     unsigned int global_idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (global_idx < N && blockIdx.x > 0){
+    if (global_idx < N && blockIdx.x > 0) {
         Y[global_idx] += S[blockIdx.x-1];
     }
 }
 
-// Host function to coordinate the hierarchical scan
 void hierarchical_scan(float *X, float *Y, unsigned int N) {
     float *d_X, *d_Y, *d_S;
-    
     unsigned int block_size = SECTION_SIZE;
     unsigned int num_blocks = cdiv(N, block_size);
     
-    CUDA_CHECK(cudaMalloc((void**)&d_X, N * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void**)&d_Y, N * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void**)&d_S, num_blocks * sizeof(float)));
+    gpuErrchk(cudaMalloc((void**)&d_X, N * sizeof(float)));
+    gpuErrchk(cudaMalloc((void**)&d_Y, N * sizeof(float)));
+    gpuErrchk(cudaMalloc((void**)&d_S, num_blocks * sizeof(float)));
     
-    CUDA_CHECK(cudaMemcpy(d_X, X, N * sizeof(float), cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(d_X, X, N * sizeof(float), cudaMemcpyHostToDevice));
     
     // Phase 1: Block-level scan and collect block sums
     hierarchical_kogge_stone_phase1<<<num_blocks, block_size, block_size * sizeof(float)>>>(
         d_X, d_Y, d_S, N);
-    CUDA_CHECK(cudaDeviceSynchronize());
+    gpuErrchk(cudaDeviceSynchronize());
     
-    // Phase 2: Scan block sums
-    hierarchical_kogge_stone_phase2<<<1, num_blocks, num_blocks * sizeof(float)>>>(
+    // Phase 2: Process block sums with multiple blocks if needed
+    unsigned int block_size_phase2 = SECTION_SIZE;
+    unsigned int num_blocks_phase2 = cdiv(num_blocks, block_size_phase2);
+    
+    hierarchical_kogge_stone_phase2<<<num_blocks_phase2, block_size_phase2, block_size_phase2 * sizeof(float)>>>(
         d_S, num_blocks);
-    CUDA_CHECK(cudaDeviceSynchronize());
+    gpuErrchk(cudaDeviceSynchronize());
     
     // Phase 3: Distribute block sums
     hierarchical_kogge_stone_phase3<<<num_blocks, block_size>>>(d_Y, d_S, N);
-    CUDA_CHECK(cudaDeviceSynchronize());
+    gpuErrchk(cudaDeviceSynchronize());
     
-    CUDA_CHECK(cudaMemcpy(Y, d_Y, N * sizeof(float), cudaMemcpyDeviceToHost));
+    gpuErrchk(cudaMemcpy(Y, d_Y, N * sizeof(float), cudaMemcpyDeviceToHost));
     
-    CUDA_CHECK(cudaFree(d_X));
-    CUDA_CHECK(cudaFree(d_Y));
-    CUDA_CHECK(cudaFree(d_S));
+    gpuErrchk(cudaFree(d_X));
+    gpuErrchk(cudaFree(d_Y));
+    gpuErrchk(cudaFree(d_S));
 }
 
 void sequential_inclusive_scan(float *X, float *Y, unsigned int N) {
@@ -143,12 +142,54 @@ void sequential_inclusive_scan(float *X, float *Y, unsigned int N) {
     }
 }
 
+float benchmark_scan(void (*scan_func)(float*, float*, unsigned int), 
+                    float* X, float* Y, unsigned int N, 
+                    int warmup, int reps) {
+    // Warmup runs
+    for (int i = 0; i < warmup; ++i) {
+        scan_func(X, Y, N);
+    }
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    
+    float totalTime_ms = 0.0f;
+    
+    // Benchmark runs
+    for (int i = 0; i < reps; ++i) {
+        clear_l2();  // Clear L2 cache before each run
+        
+        cudaEventRecord(start);
+        scan_func(X, Y, N);
+        cudaEventRecord(stop);
+        
+        cudaEventSynchronize(stop);
+        
+        float iterTime = 0.0f;
+        cudaEventElapsedTime(&iterTime, start, stop);
+        totalTime_ms += iterTime;
+    }
+    
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    
+    return totalTime_ms / reps;
+}
+
 bool allclose(float* a, float* b, int N, float rtol = 1e-5, float atol = 1e-8) {
     for(int i = 0; i < N; i++) {
         float allowed_error = atol + rtol * fabs(b[i]);
         if(fabs(a[i] - b[i]) > allowed_error) {
             printf("Arrays differ at index %d: %f != %f (allowed error: %f)\n", 
                    i, a[i], b[i], allowed_error);
+            printf("Values around error point:\n");
+            int start = (i > 5) ? i - 5 : 0;
+            int end = (i + 5 < N) ? i + 5 : N - 1;
+            printf("Index\tSequential\tHierarchical\n");
+            for(int j = start; j <= end; j++) {
+                printf("%d\t%.1f\t\t%.1f\n", j, a[j], b[j]);
+            }
             return false;
         }
     }
@@ -156,44 +197,50 @@ bool allclose(float* a, float* b, int N, float rtol = 1e-5, float atol = 1e-8) {
 }
 
 int main() {
-    unsigned int length = 2048; 
-    float* X = (float*)malloc(length * sizeof(float));
-    float* Y_hierarchical = (float*)malloc(length * sizeof(float));
-    float* Y_sequential = (float*)malloc(length * sizeof(float));
+    unsigned int sizes[] = {16384, 65536, 262144, 1048576};
+    int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
     
-    for (unsigned int i = 0; i < length; i++) {
-        X[i] = 1.0f;  // Using simple values for testing
-    }
+    // Benchmark parameters
+    const int warmup = 5;
+    const int reps = 10;
     
-    sequential_inclusive_scan(X, Y_sequential, length);
-    hierarchical_scan(X, Y_hierarchical, length);
+    printf("\nBenchmarking Scan Operations\n");
+    printf("----------------------------\n");
+    printf("%-10s %-15s %-15s %-8s\n", 
+           "Size", "Sequential(ms)", "Hierarchical(ms)", "Speedup");
     
-    printf("First 8 elements of hierarchical scan: [");
-    for (unsigned int i = 0; i < 8 && i < length; i++) {
-        printf("%.1f%s", Y_hierarchical[i], (i < 7 && i < length-1) ? ", " : "");
-    }
-    printf("]\n");
-    
-    if (length > 16) {
-        printf("Last 8 elements of hierarchical scan: [");
-        for (unsigned int i = length - 8; i < length; i++) {
-            printf("%.1f%s", Y_hierarchical[i], (i < length-1) ? ", " : "");
+    for (int i = 0; i < num_sizes; i++) {
+        unsigned int N = sizes[i];
+        
+        // Allocate and initialize arrays
+        float* X = (float*)malloc(N * sizeof(float));
+        float* Y_sequential = (float*)malloc(N * sizeof(float));
+        float* Y_hierarchical = (float*)malloc(N * sizeof(float));
+        
+        // Initialize input array
+        for (unsigned int j = 0; j < N; j++) {
+            X[j] = 1.0f;
         }
-        printf("]\n");
+        
+        // Benchmark both implementations
+        float sequential_time = benchmark_scan(sequential_inclusive_scan, X, Y_sequential, N, warmup, reps);
+        float hierarchical_time = benchmark_scan(hierarchical_scan, X, Y_hierarchical, N, warmup, reps);
+        
+        // Verify results
+        bool results_match = allclose(Y_sequential, Y_hierarchical, N);
+        
+        // Print results with fixed-width formatting
+        printf("%-10u %-15.3f %-15.3f %.2f    %s\n",
+               N,
+               sequential_time,
+               hierarchical_time,
+               sequential_time / hierarchical_time,
+               results_match ? "✓" : "✗");
+        
+        // Cleanup
+        free(X);
+        free(Y_sequential);
+        free(Y_hierarchical);
     }
-
-    // Compare results
-    printf("\nComparing hierarchical scan with sequential scan:\n");
-    if(allclose(Y_hierarchical, Y_sequential, length)) {
-        printf("Arrays are close enough!\n");
-    } else {
-        printf("Arrays differ significantly!\n");
-    }
-    
-    // Cleanup
-    free(X);
-    free(Y_hierarchical);
-    free(Y_sequential);
-    
     return 0;
 }
