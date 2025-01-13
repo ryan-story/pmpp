@@ -140,7 +140,9 @@ So all only in the first 5 iterations will there be control divergence.
 ### Exercise 4
 **For the Kogge-Stone scan kernel based on reduction trees, assume that we have 2048 elements. Which of the following gives the closest approximation of how many add operations will be performed?**
 
-I think we lack some part of this question here, but let's try to answer anyway. In the Kogge-Stone algorithm we will do two operations, per active thread per stride, addition—line 13—and saving to the buffer—line 16. We will try to calculate how many threads will be active throughout the execution of the kernel and multiply it by two operations to get the total number of operations. 
+I think we lack some part of this question here, but let's try to answer anyway. In the Kogge-Stone algorithm we will do one operation per active thread per stride—addition—line 13. We don't consider saving to the buffer in line 16 an additional operation. We will try to calculate how many threads will be active throughout the execution of the kernel and multiply it by two operations to get the total number of operations. 
+
+In this chapter we estimate the number of the operations to be `Nlog2(N) - (N - 1) = 2048 * 11 - (2048-1) = 20.481`.
 
 Let's start by figuring out how many threads will be operating. We have 2048 elements; each thread processes a single element. Blocks can have at most 1024 elements, so we will have 2 blocks with 1024 threads each. Let's analyze now how many threads will be active per block.
 
@@ -166,8 +168,9 @@ Let's start by figuring out how many threads will be operating. We have 2048 ele
 
 **For stride 1024**: There will be no active threads since none satisfy the condition `threadIdx.x >= 1024`—the` last `threadIdx.x` in each block is `1023`.
 
-Let's combine these now: `1023 + 1022 + 1020 + 1016 + 1008 + 992 + 896 + 768 + 512 = 8257` active threads in total. Times two blocks times two operations per thread per stride, it takes us to the total of `8257 x 2 x 2 = 33028` operations.
+Let's combine these now: `1023 + 1022 + 1020 + 1016 + 1008 + 992 + 960 + 896 + 768 + 512 = 9217` active threads in total. Times two blocks times, it takes us to the total of `9217 x 2 = 18434` operations. We probably should also account for propagating the sums between the blocks—`18434`+ 1024 = 19458` operations. 
 
+As you can see, this slightly differs from the theoretical number we got from the book, `Nlog2(N) - (N - 1) = 2048 * 11 - (2048-1) = 20.481`. The difference boils down to the practical limitations: we need to split the calculations into the two blocks. We "save" over 500 operations; if the array had 1024 elements, this would be `1024 * 10 - 1024 + 1 = 9217` operations—directly matching what we calculated for each block manually. This is a pretty interesting example of how the practical limitations affect real-world performance.
 
 ### Exercise 5
 **Consider the following array: [4 6 7 1 2 8 5 2]. Perform a parallel inclusive prefix scan on the array, using the Brent-Kung algorithm. Report the intermediate states of the array after each step.**
@@ -205,7 +208,7 @@ Let's combine these now: `1023 + 1022 + 1020 + 1016 + 1008 + 992 + 896 + 768 + 5
 
 This is quite similar to **Exercise 3**. Let's also analyze it step by step and calculate how many operations we need. In the Brent-Kung algorithm, in contrast to the Kogge-Stone, every thread is initially processing two elements—meaning we can process 2048 elements with 1024 threads—so we only need a single block. 
 
-For the reduction tree phase, each active thread, in every stride iteration, will perform two operations, one addition and one substitution (into the `XY`). For the inverse reduction tree phase, each active thread, for every iteration, will also perform two such operations. 
+For the reduction tree phase, each active thread, in every stride iteration, will perform one operation—an addition; again we ignore writing into the `XY`. For the inverse reduction tree phase, each active thread, for every iteration, will also perform one such operation. 
 
 Now let's calculate the number of active threads for each phase so we can calculate the total number of operations. The important thing to look at is like 08 `index = (threadIdx.x + 1)*2*stride - 1`.
 
@@ -233,7 +236,7 @@ Now let's calculate the number of active threads for each phase so we can calcul
 
 **For stride 1024:** Just 1 active thread—thread 0, processing the element 2047. 
 
-Overall, `1024 + 512 + 256 + 128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = 2047` active threads throughout the reduction tree loop, times two operations per thread per stride, bringing us to the total of `2047 x 2 = 4094` operations.
+Overall, `1024 + 512 + 256 + 128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = 2047` active threads and `2047` operations. 
 
 
 **Reversed Tree Phase:**
@@ -258,9 +261,11 @@ Overall, `1024 + 512 + 256 + 128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = 2047` active t
 
 **For stride 1:** Thread 0: element `2` ... thread 1018: element `2038`, 1019 threads in total. 
 
-Bringing it total to `1 + 4 + 7 + 15 + 31 + 63 + 127 + 254 + 509 + 1019 = 2030` total active threads. Since each thread per stride is doing two operations, this will be `2030 x 2 = 4060` operations in the reversed tree phase.
+Bringing it total to `1 + 4 + 7 + 15 + 31 + 63 + 127 + 254 + 509 + 1019 = 2030` total active threads and `2030` operations.
 
-Combined, the Redicton tree and reversed tree will be `4094 + 4060 = 8154` operations.
+Combining the reduction tree and reversed tree takes us to `2047 + 2030 = 4077` operations in total.
+
+In chapter 11.4 we estimate the number of the operations to be `2N - 2 - log2(N) = 2 * 2048 - 2 - log2(2048) = 4083`, nearly matching the manually calculated number. 
 
 
 ### Exercise 7
