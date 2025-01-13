@@ -30,6 +30,8 @@ nvcc reduction_max.cu -o reduction_max
 reduction_max
 ```
 
+**Note that the benchmarking is not 100% optimal, as the `hostToDevice` copy is executed within the benchmarked function; we do this for convenience, but we acknowledge it is not totally correct.**.
+
 ## Exercises
 
 ### Exercise 1
