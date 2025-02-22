@@ -89,7 +89,7 @@ Now you can run any program that you are interested in.
 
 <img src="exercise2_jds.png" alt=""/>
 
-```
+
 ### Exercise 2
 
 **Given a sparse matrix of integers with m rows, n columns, and z nonzeros, how many integers are needed to represent the matrix in (1) COO, (2) CSR, (3) ELL, and (4) JDS? If the information that is provided is not enough to allow an answer, indicate what information is missing.**
