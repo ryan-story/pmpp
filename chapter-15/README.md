@@ -50,7 +50,7 @@ Same as above, 8 vertices - 8 threads.
 
 **How many threads iterate over their vertex’s neighbors?**
 
-Now we have three vertices on level 2: `1`, `7` and `3`, so three vertices will iterate over their neighbours. 
+Now we have three vertices at level 2: `1`, `7` and `3`, so three vertices will iterate over their neighbours. 
 
 ### Iteration 4
 
@@ -62,8 +62,7 @@ Again, 8 vertices - 8 threads.
 
 We have two vertices at level 3: `4` and `6` - so two threads will iterate. 
 
-This is also the last iteration, as no new vertices will be added and none of the therads will set `newVertexVisited` to 1. 
-
+This is also the last iteration, all of the vertices are already visited so, no new vertices will be added and none of the therads will set flag `newVertexVisited` to 1. 
 
 **ii. If a vertex-centric pull implementation is used:**
 
@@ -91,7 +90,7 @@ We have 8 verices so we lanuch 8 threads.
 
 **How many threads label their vertex?**
 
-3 threads, for vertex `1`, `7`, and `3` will label their vertex.
+3 threads, for vertex `1`, `7`, and `3` will label their vertex. 
 
 ### Iteration 3
 **How many threads are launched?**
@@ -100,13 +99,13 @@ Yet again - 8 vertices 8 threads lanuched.
 
 **How many threads iterate over their vertex’s neighbors?**
 
-2 threads, for vertex `6` and for vertex `4` will iterate over their neighbours. 
+2 threads, for vertex `6`, and for vertex `4` will iterate over their neighbours. 
 
 **How many threads label their vertex?**
 
-2 threads, for vertices `6` and `4` will label their vertex as level 3.
+Two threads will label their vertex. 
 
-### Iteration 3
+### Iteration 4
 
 **How many threads are launched?**
 
@@ -118,7 +117,7 @@ None, at this point we don't have any more unvisited vertices.
 
 **How many threads label their vertex?**
 
-As above - none. 
+As above - none. This is also our last iteration as none of the threads will set flag `newVertexVisited` to 1. 
 
 **iii If an edge-centric implementation is used:**
 
@@ -164,9 +163,44 @@ Again, we have 15 edges so we launch 15 threads.
 
 
 **iv. If a vertex-centric push frontier-based implementation is used:**
-**1. How many threads are launched?**
-**2. How many threads iterate over their vertex’s neighbors?**
 
+We assume that iteration 1 will start with `[0]` in `prevFrontier`.
+
+### Iteration 1
+**How many threads are launched?**
+
+We launch only 1 thread for vertex 0.
+
+**How many threads iterate over their vertex’s neighbors?**
+
+Only one thread iterate over their vertex neighbours. We add `[5, 2]` to `currFrontier`. 
+
+### Iteration 2
+**How many threads are launched?**
+
+We have two elements in `prevFrontier`, so two threads are launched. 
+
+**How many threads iterate over their vertex’s neighbors?**
+
+Two threads, for vertices `5` and `2` are iterating over their vetex neighbours. We add `[1, 7, 3]` to `currFrontier`. 
+
+### Iteration 3
+**How many threads are launched?**
+
+We have three elements in `prevFrontier`, so three threads are launched. 
+
+**How many threads iterate over their vertex’s neighbors?**
+
+Three threads, for vertices `1`, `7` and `3`, are iterting over their vertex neighbours. We add `[4, 6]` to the `currFrontier`, not that depending on which thread will access it first `6` will be added either by thread for vertex `3` or a thread for vertex `7`.
+
+### Iteration 4
+**How many threads are launched?**
+
+Two elements in `prevFrontier` - `[4, 6]`, so two threads are launched. 
+
+**How many threads iterate over their vertex’s neighbors?**
+
+Two of them, but there is no vertices that are still not visited, hence no will be added to the `currFrontier`, which will signal to the function that we don't need to launch the grid anymore. 
 
 ### Exercise 2
 
