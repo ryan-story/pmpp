@@ -4,18 +4,62 @@
 #include <vector>
 
 struct CSRGraph{
-    int *srcPtr;
+    int *srcPtrs;
     int *dst;
     int *values;
     int numVertices;
 };
 
-struct CSSGraph{
-    int *colPtr;
-    int *rowIdx;
+struct CSCGraph{
+    int *dstPtrs;
+    int *src;
     int *values;
     int numVertices;
 };
+
+CSCGraph convertCSRtoCSC(const CSRGraph& csrGraph) {
+    int numVertices = csrGraph.numVertices;
+    int numEdges = csrGraph.srcPtrs[numVertices];
+    
+    // Allocate memory for CSC graph
+    CSCGraph cscGraph;
+    cscGraph.numVertices = numVertices;
+    cscGraph.dstPtrs = (int*)malloc(sizeof(int) * (numVertices + 1));
+    cscGraph.src = (int*)malloc(sizeof(int) * numEdges);
+    cscGraph.values = (int*)malloc(sizeof(int) * numEdges);
+    
+    // Initialize dstPtrs array with zeros
+    for (int i = 0; i <= numVertices; i++) {
+        cscGraph.dstPtrs[i] = 0;
+    }
+    
+    // Count occurrences of each destination (column) to determine dstPtrs
+    for (int i = 0; i < numEdges; i++) {
+        cscGraph.dstPtrs[csrGraph.dst[i] + 1]++;
+    }
+    
+    // Cumulative sum to get final dstPtrs
+    for (int i = 1; i <= numVertices; i++) {
+        cscGraph.dstPtrs[i] += cscGraph.dstPtrs[i - 1];
+    }
+    
+    // Copy values to their correct positions
+    int* pos = (int*)malloc(sizeof(int) * numVertices);
+    memcpy(pos, cscGraph.dstPtrs, sizeof(int) * numVertices);
+    
+    for (int i = 0; i < numVertices; i++) {
+        for (int j = csrGraph.srcPtrs[i]; j < csrGraph.srcPtrs[i + 1]; j++) {
+            int col = csrGraph.dst[j];
+            int idx = pos[col]++;
+            
+            cscGraph.src[idx] = i;            // Store the source vertex
+            cscGraph.values[idx] = csrGraph.values[j]; // Copy the corresponding value
+        }
+    }
+    
+    free(pos);
+    return cscGraph;
+}
 
 // BFS returning a pointer to the list of levels for all vertices
 int* bfs(const CSRGraph& graph, int startingNode) {
@@ -38,7 +82,7 @@ int* bfs(const CSRGraph& graph, int startingNode) {
         int vertex = queue.front();
         queue.pop();
 
-        for(int edge = graph.srcPtr[vertex]; edge < graph.srcPtr[vertex+1]; edge++){
+        for(int edge = graph.srcPtrs[vertex]; edge < graph.srcPtrs[vertex+1]; edge++){
             int neigbour = graph.dst[edge];
             if (!visited[neigbour]){
                 levels[neigbour] = levels[vertex] + 1;
@@ -55,7 +99,7 @@ __global__ void bsf_push_vertex_centric_kernel(CSRGraph graph, int* levels, int*
     if (vertex < graph.numVertices){
         if (levels[vertex] == currLevel - 1){
             //iterate over all the vertices at the current level
-            for (unsigned int edge = graph.srcPtr[vertex]; edge < graph.srcPtr[vertex+1]; edge++){
+            for (unsigned int edge = graph.srcPtrs[vertex]; edge < graph.srcPtrs[vertex+1]; edge++){
                 unsigned int neigbour = graph.dst[edge];
                 //not yet visited
                 if (levels[neigbour] == -1){
@@ -76,26 +120,27 @@ int* bfsParallelPushVertexCentric(const CSRGraph& hostGraph, int startingNode) {
     hostLevels[startingNode] = 0;
     
     // Calculate size needed for graph arrays
-    size_t rowPtrSize = sizeof(int) * (hostGraph.numVertices + 1);
-    size_t edgeSize = sizeof(int) * hostGraph.srcPtr[hostGraph.numVertices];
+    size_t scrPtrsSize = sizeof(int) * (hostGraph.numVertices + 1);
+    size_t dstSize = sizeof(int) * hostGraph.srcPtrs[hostGraph.numVertices];
     size_t vertexSize = sizeof(int) * hostGraph.numVertices;
     
     // Allocate device memory
-    int *d_rowPtr, *d_colIdx, *d_values, *d_levels, *d_newVertexVisited;
-    cudaMalloc(&d_rowPtr, rowPtrSize);
-    cudaMalloc(&d_colIdx, edgeSize);
-    cudaMalloc(&d_values, edgeSize);
+    int *d_srcPtrs, *d_dst, *d_values, *d_levels, *d_newVertexVisited;
+    cudaMalloc(&d_srcPtrs, scrPtrsSize);
+    cudaMalloc(&d_dst, dstSize);
+    cudaMalloc(&d_values, dstSize);
     cudaMalloc(&d_levels, vertexSize);
     cudaMalloc(&d_newVertexVisited, sizeof(int));
     
-    cudaMemcpy(d_rowPtr, hostGraph.srcPtr, rowPtrSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_colIdx, hostGraph.dst, edgeSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_values, hostGraph.values, edgeSize, cudaMemcpyHostToDevice);
+    // Copy values to cuda
+    cudaMemcpy(d_srcPtrs, hostGraph.srcPtrs, scrPtrsSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_dst, hostGraph.dst, dstSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_values, hostGraph.values, dstSize, cudaMemcpyHostToDevice);
     cudaMemcpy(d_levels, hostLevels, vertexSize, cudaMemcpyHostToDevice);
     
     CSRGraph deviceGraph = {
-        .srcPtr = d_rowPtr,
-        .dst = d_colIdx,
+        .srcPtrs = d_srcPtrs,
+        .dst = d_dst,
         .values = d_values,
         .numVertices = hostGraph.numVertices
     };
@@ -106,6 +151,7 @@ int* bfsParallelPushVertexCentric(const CSRGraph& hostGraph, int startingNode) {
     int currLevel = 1;
     int hostNewVertexVisited = 1;
     
+    //we iterate over the levels as long as any vertex reports finding a new unvisited neighbour
     while (hostNewVertexVisited != 0) {
         hostNewVertexVisited = 0;
         cudaMemcpy(d_newVertexVisited, &hostNewVertexVisited, sizeof(int), cudaMemcpyHostToDevice);
@@ -121,8 +167,8 @@ int* bfsParallelPushVertexCentric(const CSRGraph& hostGraph, int startingNode) {
     
     cudaMemcpy(hostLevels, d_levels, vertexSize, cudaMemcpyDeviceToHost);
     
-    cudaFree(d_rowPtr);
-    cudaFree(d_colIdx);
+    cudaFree(d_srcPtrs);
+    cudaFree(d_dst);
     cudaFree(d_values);
     cudaFree(d_levels);
     cudaFree(d_newVertexVisited);
@@ -130,6 +176,88 @@ int* bfsParallelPushVertexCentric(const CSRGraph& hostGraph, int startingNode) {
     return hostLevels;
 }
 
+__global__ void bsf_pull_vertex_centric_kernel(CSCGraph graph, int* levels, int* newVertexVisitd, unsigned int currLevel){
+    unsigned int vertex = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (vertex < graph.numVertices){
+        if (levels[vertex] == -1) { //Vertext not yet visited
+            for (unsigned int edge = graph.dstPtrs[vertex]; edge < graph.dstPtrs[vertex+1]; edge++){
+                unsigned int neighbour = graph.src[edge];
+
+                if (levels[neighbour] == currLevel - 1){
+                    levels[vertex] = currLevel; 
+                    *newVertexVisitd = 1;
+                    break; //if any of the neighbour at the prev level we reached our point
+                }
+            }
+        }
+    }
+}
+
+int* bfsParallelPullVertexCentric(const CSCGraph& hostGraph, int startingNode) {
+    // Initialize host levels array
+    int* hostLevels = (int*)malloc(sizeof(int) * hostGraph.numVertices);
+    for (int i = 0; i < hostGraph.numVertices; i++) {
+        hostLevels[i] = -1;
+    }
+    hostLevels[startingNode] = 0;
+    
+    // Calculate size needed for graph arrays
+    size_t dstPtrsSize = sizeof(int) * (hostGraph.numVertices + 1);
+    size_t srcSize = sizeof(int) * hostGraph.dstPtrs[hostGraph.numVertices]; // look where the last dstPtrs is poinintg - than we know how many scr elements there are
+    size_t vertexSize = sizeof(int) * hostGraph.numVertices;
+    
+    // Allocate device memory
+    int *d_dstPtrs, *d_src, *d_values, *d_levels, *d_newVertexVisited;
+    cudaMalloc(&d_dstPtrs, dstPtrsSize);
+    cudaMalloc(&d_src, srcSize);
+    cudaMalloc(&d_values, srcSize);
+    cudaMalloc(&d_levels, vertexSize);
+    cudaMalloc(&d_newVertexVisited, sizeof(int));
+    
+    // Copy values to cuda
+    cudaMemcpy(d_dstPtrs, hostGraph.dstPtrs, dstPtrsSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_src, hostGraph.src, srcSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_values, hostGraph.values, srcSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_levels, hostLevels, vertexSize, cudaMemcpyHostToDevice);
+    
+    CSCGraph deviceGraph = {
+        .dstPtrs = d_dstPtrs,
+        .src = d_src,
+        .values = d_values,
+        .numVertices = hostGraph.numVertices
+    };
+    
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (hostGraph.numVertices + threadsPerBlock - 1) / threadsPerBlock;
+    
+    int currLevel = 1;
+    int hostNewVertexVisited = 1;
+    
+    //we iterate over the levels as long as any vertex reports finding a new unvisited neighbour
+    while (hostNewVertexVisited != 0) {
+        hostNewVertexVisited = 0;
+        cudaMemcpy(d_newVertexVisited, &hostNewVertexVisited, sizeof(int), cudaMemcpyHostToDevice);
+        
+        bsf_pull_vertex_centric_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+            deviceGraph, d_levels, d_newVertexVisited, currLevel);
+        
+        cudaDeviceSynchronize();
+        
+        cudaMemcpy(&hostNewVertexVisited, d_newVertexVisited, sizeof(int), cudaMemcpyDeviceToHost);
+        currLevel++;
+    }
+    
+    cudaMemcpy(hostLevels, d_levels, vertexSize, cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_dstPtrs);
+    cudaFree(d_src);
+    cudaFree(d_values);
+    cudaFree(d_levels);
+    cudaFree(d_newVertexVisited);
+    
+    return hostLevels;
+}
 
 bool compareBFSResults(int* sequentialLevels, int* parallelLevels, int numVertices, bool printDetails = false) {
     bool resultsMatch = true;
@@ -181,17 +309,20 @@ int main() {
 
     int numVertices = 8;
 
-    struct CSRGraph graph = {
-        .srcPtr = rowPtrData,
+    struct CSRGraph csrGraph = {
+        .srcPtrs = rowPtrData,
         .dst = colIdxData,
         .values = valuesData,
         .numVertices = numVertices
     };
+
+    CSCGraph cscGraph = convertCSRtoCSC(csrGraph);
     
 
     // int* levels = bfs(graph, 0);
-    int* sequentialLevels = bfs(graph, 0);
-    int* parallelLevels = bfsParallelPushVertexCentric(graph, 0);
+    int* sequentialLevels = bfs(csrGraph, 0);
+    // int* parallelLevels = bfsParallelPushVertexCentric(csrGraph, 0);
+    int* parallelLevels = bfsParallelPullVertexCentric(cscGraph, 0);
 
 
     bool resultsMatch = compareBFSResults(sequentialLevels, parallelLevels, numVertices, true);
