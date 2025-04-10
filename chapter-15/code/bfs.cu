@@ -17,6 +17,16 @@ struct CSCGraph{
     int numVertices;
 };
 
+struct COOGraph
+{
+    int *scr;
+    int *dst;
+    int *values;
+    int numEdges;
+    int numVertices;
+};
+
+
 CSCGraph convertCSRtoCSC(const CSRGraph& csrGraph) {
     int numVertices = csrGraph.numVertices;
     int numEdges = csrGraph.srcPtrs[numVertices];
@@ -60,6 +70,83 @@ CSCGraph convertCSRtoCSC(const CSRGraph& csrGraph) {
     free(pos);
     return cscGraph;
 }
+
+COOGraph convertCSRtoCOO(const CSRGraph& csrGraph) {
+    int numVertices = csrGraph.numVertices;
+    int numEdges = csrGraph.srcPtrs[numVertices];
+    
+    // Allocate memory for COO graph
+    COOGraph cooGraph;
+    cooGraph.numVertices = numVertices;
+    cooGraph.numEdges = numEdges;
+    cooGraph.scr = (int*)malloc(sizeof(int) * numEdges);
+    cooGraph.dst = (int*)malloc(sizeof(int) * numEdges);
+    cooGraph.values = (int*)malloc(sizeof(int) * numEdges);
+    
+    // Populate the COO arrays
+    int edgeIdx = 0;
+    for (int i = 0; i < numVertices; i++) {
+        for (int j = csrGraph.srcPtrs[i]; j < csrGraph.srcPtrs[i + 1]; j++) {
+            cooGraph.scr[edgeIdx] = i;                // Source vertex
+            cooGraph.dst[edgeIdx] = csrGraph.dst[j];  // Destination vertex
+            cooGraph.values[edgeIdx] = csrGraph.values[j]; // Edge value
+            edgeIdx++;
+        }
+    }
+    
+    return cooGraph;
+}
+
+CSCGraph convertCOOtoCSC(const COOGraph& cooGraph) {
+    CSCGraph cscGraph;
+    cscGraph.numVertices = cooGraph.numVertices;
+    cscGraph.dstPtrs = (int*)malloc(sizeof(int) * (cooGraph.numVertices + 1));
+    cscGraph.src = (int*)malloc(sizeof(int) * cooGraph.numEdges);
+    cscGraph.values = (int*)malloc(sizeof(int) * cooGraph.numEdges);
+    
+    // Initialize dstPtrs array with zeros
+    for (int i = 0; i <= cooGraph.numVertices; i++) {
+        cscGraph.dstPtrs[i] = 0;
+    }
+    
+    // Count occurrences of each destination (column)
+    for (int i = 0; i < cooGraph.numEdges; i++) {
+        cscGraph.dstPtrs[cooGraph.dst[i] + 1]++;
+    }
+    
+    // Cumulative sum to get column pointers
+    for (int i = 1; i <= cooGraph.numVertices; i++) {
+        cscGraph.dstPtrs[i] += cscGraph.dstPtrs[i - 1];
+    }
+    
+    // Copy data from COO to CSC
+    int* pos = (int*)malloc(sizeof(int) * cooGraph.numVertices);
+    memcpy(pos, cscGraph.dstPtrs, sizeof(int) * cooGraph.numVertices);
+    
+    for (int i = 0; i < cooGraph.numEdges; i++) {
+        int col = cooGraph.dst[i];
+        int idx = pos[col]++;
+        
+        cscGraph.src[idx] = cooGraph.scr[i];
+        cscGraph.values[idx] = cooGraph.values[i];
+    }
+    
+    free(pos);
+    return cscGraph;
+}
+
+CSCGraph convertCSRtoCSC(const CSRGraph& csrGraph) {
+    COOGraph cooGraph = convertCSRtoCOO(csrGraph);
+    CSCGraph cscGraph = convertCOOtoCSC(cooGraph);
+    
+    free(cooGraph.scr);
+    free(cooGraph.dst);
+    free(cooGraph.values);
+    
+    return cscGraph;
+}
+
+
 
 // BFS returning a pointer to the list of levels for all vertices
 int* bfs(const CSRGraph& graph, int startingNode) {
