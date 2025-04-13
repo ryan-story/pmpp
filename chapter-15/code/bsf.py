@@ -26,9 +26,9 @@ def dfs(scr_ptrs: list[int], dst: list[int], starting_node: int) -> list[int]:
     return levels            
 
 if __name__ == "__main__":
-    rowPtr = [0, 2, 5, 6, 8, 9, 11, 12, 16]
-    colIdx = [2, 5, 0, 4, 7, 3, 0, 6, 3, 1, 7, 4, 1, 2, 4, 6]
-    values = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    rowPtr = [0, 2, 5, 6, 8, 9, 11, 12, 15]
+    colIdx = [2, 5, 0, 4, 7, 3, 0, 6, 3, 1, 7, 4, 2, 4, 6]
+    values = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 
     levels = dfs(rowPtr, colIdx, starting_node=0)
 

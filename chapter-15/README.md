@@ -16,7 +16,7 @@
 
 **b. Represent the graph in the CSR format. The neighbor list of each vertex must be sorted.**
 
-![Adjacency matrix in CSR format](image.png)
+![Adjacency matrix in CSR format](exercise_1b.png)
 
 **Parallel BFS is executed on this graph starting from vertex 0 (i.e., vertex 0 is in level 0). For each iteration of the BFS traversal:**
 
