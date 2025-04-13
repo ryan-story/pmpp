@@ -137,6 +137,42 @@ float benchmark_parallel_coo_bfs(BFSParallelCOOFunction bfs_func, const COOGraph
     return total_time_ms / reps;
 }
 
+float benchmark_parallel_csc_bfs(BFSParallelCSCFunction bfs_func, const CSCGraph& deviceGraph, 
+                               int start_vertex, int warmup, int reps) {
+    // Warmup runs
+    for (int i = 0; i < warmup; i++) {
+        int* result = bfs_func(deviceGraph, start_vertex);
+        free(result);
+    }
+    
+    // Timing runs
+    cudaEvent_t start, stop;
+    gpuErrchk(cudaEventCreate(&start));
+    gpuErrchk(cudaEventCreate(&stop));
+    
+    float total_time_ms = 0.0f;
+    
+    for (int i = 0; i < reps; i++) {
+        clear_l2();  // Clear L2 cache to reduce inter-run effects
+        
+        gpuErrchk(cudaEventRecord(start, 0));
+        int* result = bfs_func(deviceGraph, start_vertex);
+        gpuErrchk(cudaEventRecord(stop, 0));
+        gpuErrchk(cudaEventSynchronize(stop));
+        
+        float elapsed_ms = 0.0f;
+        gpuErrchk(cudaEventElapsedTime(&elapsed_ms, start, stop));
+        total_time_ms += elapsed_ms;
+        
+        free(result);
+    }
+    
+    gpuErrchk(cudaEventDestroy(start));
+    gpuErrchk(cudaEventDestroy(stop));
+    
+    return total_time_ms / reps;
+}
+
 // Main function with benchmarking
 int main() {
     // Parameters for benchmarking
@@ -155,10 +191,12 @@ int main() {
     printf("Verifying BFS implementations correctness...\n");
     COOGraph verifyGraphCOO = generateScaleFreeGraphCOO(2000, 50);
     CSRGraph verifyGraphCSR = convertCOOtoCSR(verifyGraphCOO);
+    CSCGraph verifyGraphCSC = convertCOOtoCSC(verifyGraphCOO);
     
     // Allocate on device for testing
     COOGraph deviceVerifyGraphCOO = allocateCOOGraphOnDevice(verifyGraphCOO);
     CSRGraph deviceVerifyGraphCSR = allocateCSRGraphOnDevice(verifyGraphCSR);
+    CSCGraph deviceVerifyGraphCSC = allocateCSCGraphOnDevice(verifyGraphCSC);
     
     // Get reference results from sequential BFS
     int* reference_result = bfs(verifyGraphCSR, start_vertex);
@@ -166,6 +204,10 @@ int main() {
     // Check push-based vertex-centric BFS
     int* push_result = bfsParallelPushVertexCentricDevice(deviceVerifyGraphCSR, start_vertex);
     bool push_correct = compareBFSResults(reference_result, push_result, verifyGraphCSR.numVertices, false);
+    
+    // Check pull-based vertex-centric BFS
+    int* pull_result = bfsParallelPullVertexCentricDevice(deviceVerifyGraphCSC, start_vertex);
+    bool pull_correct = compareBFSResults(reference_result, pull_result, verifyGraphCSR.numVertices, false);
     
     // Check edge-centric BFS
     int* edge_result = bfsParallelEdgeCentricDevice(deviceVerifyGraphCOO, start_vertex);
@@ -175,14 +217,16 @@ int main() {
     int* frontier_result = bfsParallelFrontierVertexCentricDevice(deviceVerifyGraphCSR, start_vertex);
     bool frontier_correct = compareBFSResults(reference_result, frontier_result, verifyGraphCSR.numVertices, false);
     
-    bool all_correct = push_correct && edge_correct && frontier_correct;
+    bool all_correct = push_correct && pull_correct && edge_correct && frontier_correct;
     
     // Clean up verification resources
     free(reference_result);
     free(push_result);
+    free(pull_result);
     free(edge_result);
     free(frontier_result);
     freeCSRGraphOnDevice(deviceVerifyGraphCSR);
+    freeCSCGraphOnDevice(deviceVerifyGraphCSC);
     freeCOOGraphOnDevice(deviceVerifyGraphCOO);
     free(verifyGraphCOO.scr);
     free(verifyGraphCOO.dst);
@@ -190,6 +234,9 @@ int main() {
     free(verifyGraphCSR.srcPtrs);
     free(verifyGraphCSR.dst);
     free(verifyGraphCSR.values);
+    free(verifyGraphCSC.dstPtrs);
+    free(verifyGraphCSC.src);
+    free(verifyGraphCSC.values);
     
     if (!all_correct) {
         printf("ERROR: Some BFS implementations are not producing correct results!\n");
@@ -214,6 +261,7 @@ int main() {
         printf("Allocating graphs on device...\n");
         COOGraph deviceScaleFreeCOO = allocateCOOGraphOnDevice(scaleFreeCOO);
         CSRGraph deviceScaleFreeCSR = allocateCSRGraphOnDevice(scaleFreeCSR);
+        CSCGraph deviceScaleFreeCSC = allocateCSCGraphOnDevice(scaleFreeCSC);
         
         // Verify correctness for this specific graph
         printf("Verifying BFS correctness for %d vertices graph... ", size);
@@ -222,17 +270,21 @@ int main() {
         int* par_push_result = bfsParallelPushVertexCentricDevice(deviceScaleFreeCSR, start_vertex);
         bool push_ok = compareBFSResults(seq_result, par_push_result, scaleFreeCSR.numVertices, false);
         
+        int* par_pull_result = bfsParallelPullVertexCentricDevice(deviceScaleFreeCSC, start_vertex);
+        bool pull_ok = compareBFSResults(seq_result, par_pull_result, scaleFreeCSR.numVertices, false);
+        
         int* par_edge_result = bfsParallelEdgeCentricDevice(deviceScaleFreeCOO, start_vertex);
         bool edge_ok = compareBFSResults(seq_result, par_edge_result, scaleFreeCSR.numVertices, false);
         
         int* par_frontier_result = bfsParallelFrontierVertexCentricDevice(deviceScaleFreeCSR, start_vertex);
         bool frontier_ok = compareBFSResults(seq_result, par_frontier_result, scaleFreeCSR.numVertices, false);
         
-        bool correct = push_ok && edge_ok && frontier_ok;
+        bool correct = push_ok && pull_ok && edge_ok && frontier_ok;
         
         // Free the verification results
         free(seq_result);
         free(par_push_result);
+        free(par_pull_result);
         free(par_edge_result);
         free(par_frontier_result);
         
@@ -241,6 +293,7 @@ int main() {
             
             // Free memory and continue to next size
             freeCSRGraphOnDevice(deviceScaleFreeCSR);
+            freeCSCGraphOnDevice(deviceScaleFreeCSC);
             freeCOOGraphOnDevice(deviceScaleFreeCOO);
             free(scaleFreeCOO.scr);
             free(scaleFreeCOO.dst);
@@ -267,6 +320,12 @@ int main() {
                                                   deviceScaleFreeCSR, start_vertex, warmup_runs, timing_runs);
         printf("%.2f ms (%.2fx speedup)\n", push_time, seq_time / push_time);
         
+        // Benchmark pull-based vertex-centric BFS
+        printf("Pull Vertex-Centric BFS: ");
+        float pull_time = benchmark_parallel_csc_bfs(bfsParallelPullVertexCentricDevice, 
+                                                 deviceScaleFreeCSC, start_vertex, warmup_runs, timing_runs);
+        printf("%.2f ms (%.2fx speedup)\n", pull_time, seq_time / pull_time);
+        
         // Benchmark edge-centric BFS
         printf("Edge-Centric BFS: ");
         float edge_time = benchmark_parallel_coo_bfs(bfsParallelEdgeCentricDevice, 
@@ -283,6 +342,7 @@ int main() {
         
         // Free device graph memory
         freeCSRGraphOnDevice(deviceScaleFreeCSR);
+        freeCSCGraphOnDevice(deviceScaleFreeCSC);
         freeCOOGraphOnDevice(deviceScaleFreeCOO);
         
         // Free host graph memory
@@ -305,6 +365,7 @@ int main() {
     printf("Generating small-world graph...\n");
     COOGraph smallWorldCOO = generateSmallWorldGraphCOO(10000, 50, 0.1);
     CSRGraph smallWorldCSR = convertCOOtoCSR(smallWorldCOO);
+    CSCGraph smallWorldCSC = convertCOOtoCSC(smallWorldCOO);
     
     // Verify correctness for the small-world graph
     printf("Verifying BFS correctness for small-world graph... ");
@@ -312,6 +373,7 @@ int main() {
     // Allocate graphs on device
     COOGraph deviceSmallWorldCOO = allocateCOOGraphOnDevice(smallWorldCOO);
     CSRGraph deviceSmallWorldCSR = allocateCSRGraphOnDevice(smallWorldCSR);
+    CSCGraph deviceSmallWorldCSC = allocateCSCGraphOnDevice(smallWorldCSC);
     
     // Get sequential reference result
     int* sw_seq_result = bfs(smallWorldCSR, start_vertex);
@@ -320,17 +382,21 @@ int main() {
     int* sw_push_result = bfsParallelPushVertexCentricDevice(deviceSmallWorldCSR, start_vertex);
     bool sw_push_ok = compareBFSResults(sw_seq_result, sw_push_result, smallWorldCSR.numVertices, false);
     
+    int* sw_pull_result = bfsParallelPullVertexCentricDevice(deviceSmallWorldCSC, start_vertex);
+    bool sw_pull_ok = compareBFSResults(sw_seq_result, sw_pull_result, smallWorldCSR.numVertices, false);
+    
     int* sw_edge_result = bfsParallelEdgeCentricDevice(deviceSmallWorldCOO, start_vertex);
     bool sw_edge_ok = compareBFSResults(sw_seq_result, sw_edge_result, smallWorldCSR.numVertices, false);
     
     int* sw_frontier_result = bfsParallelFrontierVertexCentricDevice(deviceSmallWorldCSR, start_vertex);
     bool sw_frontier_ok = compareBFSResults(sw_seq_result, sw_frontier_result, smallWorldCSR.numVertices, false);
     
-    bool small_world_correct = sw_push_ok && sw_edge_ok && sw_frontier_ok;
+    bool small_world_correct = sw_push_ok && sw_pull_ok && sw_edge_ok && sw_frontier_ok;
     
     // Free verification results
     free(sw_seq_result);
     free(sw_push_result);
+    free(sw_pull_result);
     free(sw_edge_result);
     free(sw_frontier_result);
     
@@ -339,6 +405,7 @@ int main() {
         
         // Free device graph memory
         freeCSRGraphOnDevice(deviceSmallWorldCSR);
+        freeCSCGraphOnDevice(deviceSmallWorldCSC);
         freeCOOGraphOnDevice(deviceSmallWorldCOO);
         
         // Free host graph memory
@@ -348,6 +415,9 @@ int main() {
         free(smallWorldCSR.srcPtrs);
         free(smallWorldCSR.dst);
         free(smallWorldCSR.values);
+        free(smallWorldCSC.dstPtrs);
+        free(smallWorldCSC.src);
+        free(smallWorldCSC.values);
         
         return 1;
     }
@@ -364,6 +434,12 @@ int main() {
                                               deviceSmallWorldCSR, start_vertex, warmup_runs, timing_runs);
     printf("%.2f ms (%.2fx speedup)\n", push_time, seq_time / push_time);
     
+    // Benchmark pull-based vertex-centric BFS
+    printf("Pull Vertex-Centric BFS: ");
+    float pull_time = benchmark_parallel_csc_bfs(bfsParallelPullVertexCentricDevice, 
+                                             deviceSmallWorldCSC, start_vertex, warmup_runs, timing_runs);
+    printf("%.2f ms (%.2fx speedup)\n", pull_time, seq_time / pull_time);
+    
     // Benchmark edge-centric BFS
     printf("Edge-Centric BFS: ");
     float edge_time = benchmark_parallel_coo_bfs(bfsParallelEdgeCentricDevice, 
@@ -378,6 +454,7 @@ int main() {
     
     // Free device graph memory
     freeCSRGraphOnDevice(deviceSmallWorldCSR);
+    freeCSCGraphOnDevice(deviceSmallWorldCSC);
     freeCOOGraphOnDevice(deviceSmallWorldCOO);
     
     // Free host graph memory
@@ -387,6 +464,9 @@ int main() {
     free(smallWorldCSR.srcPtrs);
     free(smallWorldCSR.dst);
     free(smallWorldCSR.values);
+    free(smallWorldCSC.dstPtrs);
+    free(smallWorldCSC.src);
+    free(smallWorldCSC.values);
     
     return 0;
 }
