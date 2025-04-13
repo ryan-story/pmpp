@@ -5,13 +5,15 @@
 #include "../include/bfs_parallel.h"
 #include "../include/device_memory.h"
 
+#define LOCAL_FRONTIER_CAPACITY 256
+
 // KERNEL DEFINITIONS
 __global__ void bsf_push_vertex_centric_kernel(CSRGraph graph, int* levels, int* newVertexVisitd,
                                                unsigned int currLevel) {
     unsigned int vertex = blockIdx.x * blockDim.x + threadIdx.x;
     if (vertex < graph.numVertices) {
         if (levels[vertex] == currLevel - 1) {
-            // iterate over all the vertices at the current level
+            // iterate over all the vertices at the current levels
             for (unsigned int edge = graph.srcPtrs[vertex]; edge < graph.srcPtrs[vertex + 1]; edge++) {
                 unsigned int neigbour = graph.dst[edge];
                 // not yet visited
@@ -36,7 +38,7 @@ __global__ void bsf_pull_vertex_centric_kernel(CSCGraph graph, int* levels, int*
                 if (levels[neighbour] == currLevel - 1) {
                     levels[vertex] = currLevel;
                     *newVertexVisitd = 1;
-                    break;  // if any of the neighbour at the prev level we reached our point
+                    break;  // if any of the neighbour at the prev levels we reached our point
                 }
             }
         }
@@ -73,6 +75,55 @@ __global__ void bsf_frontier_vertex_centric_kernel(CSRGraph csrGraph, int* level
                 currFrontier[currFrontierIdx] = neighbour;
             }
         }
+    }
+}
+
+__global__ void bsf_frontier_vertex_centric_with_privatization_kernel(CSRGraph csrGraph, int* levels,
+                int* prevFrontier, int* currFrontier,
+                int numPrevFrontier, int* numCurrFrontier,
+                int currLevel) {
+
+    // Initialize privatized frontier
+    __shared__ unsigned int currFrontier_s[LOCAL_FRONTIER_CAPACITY];
+    __shared__ unsigned int numCurrFrontier_s;
+    if(threadIdx.x == 0) {
+        numCurrFrontier_s = 0;
+    }
+    __syncthreads();
+
+    // Perform BFS
+    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
+    if(i < numPrevFrontier) {
+        unsigned int vertex = prevFrontier[i];
+        for(unsigned int edge = csrGraph.srcPtrs[vertex];
+                edge < csrGraph.srcPtrs[vertex + 1]; ++edge) {
+            unsigned int neighbor = csrGraph.dst[edge];
+            if(atomicCAS(&levels[neighbor], UINT_MAX, currLevel) == UINT_MAX) {
+                unsigned int currFrontierIdx_s = atomicAdd(&numCurrFrontier_s, 1);
+                if(currFrontierIdx_s < LOCAL_FRONTIER_CAPACITY) {
+                    currFrontier_s[currFrontierIdx_s] = neighbor;
+                } else {
+                    numCurrFrontier_s = LOCAL_FRONTIER_CAPACITY;
+                    unsigned int currFrontierIdx = atomicAdd(numCurrFrontier, 1);
+                    currFrontier[currFrontierIdx] = neighbor;
+                }
+            }
+        }
+    }
+    __syncthreads();
+
+    // Allocate in global frontier
+    __shared__ unsigned int currFrontierStartIdx;
+    if(threadIdx.x == 0) {
+        currFrontierStartIdx = atomicAdd(numCurrFrontier, numCurrFrontier_s);
+    }
+    __syncthreads();
+
+    // Commit to global frontier
+    for(unsigned int currFrontierIdx_s = threadIdx.x;
+            currFrontierIdx_s < numCurrFrontier_s; currFrontierIdx_s += blockDim.x) {
+        unsigned int currFrontierIdx = currFrontierStartIdx + currFrontierIdx_s;
+        currFrontier[currFrontierIdx] = currFrontier_s[currFrontierIdx_s];
     }
 }
 
@@ -524,6 +575,7 @@ int* bfsParallelFrontierVertexCentricDevice(const CSRGraph& deviceGraph, int sta
         int blocksPerGrid = (hostNumPrevFrontier + threadsPerBlock - 1) / threadsPerBlock;
         
         // Launch kernel to process the frontier
+        // bsf_frontier_vertex_centric_kernel
         bsf_frontier_vertex_centric_kernel<<<blocksPerGrid, threadsPerBlock>>>(
             deviceGraph, d_levels, d_prevFrontier, d_currFrontier, 
             hostNumPrevFrontier, d_numCurrFrontier, currLevel);
