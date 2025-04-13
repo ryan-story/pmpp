@@ -38,6 +38,7 @@ typedef int* (*BFSSequentialFunction)(const CSRGraph&, int);
 typedef int* (*BFSParallelCSRFunction)(const CSRGraph&, int);
 typedef int* (*BFSParallelCSCFunction)(const CSCGraph&, int);
 typedef int* (*BFSParallelCOOFunction)(const COOGraph&, int);
+typedef int* (*BFSDirectionOptimizedFunction)(const CSRGraph&, const CSCGraph&, int, float);
 
 float benchmark_sequential_bfs(BFSSequentialFunction bfs_func, const CSRGraph& graph, int start_vertex, 
                             int warmup, int reps) {
@@ -173,6 +174,44 @@ float benchmark_parallel_csc_bfs(BFSParallelCSCFunction bfs_func, const CSCGraph
     return total_time_ms / reps;
 }
 
+float benchmark_direction_optimized_bfs(BFSDirectionOptimizedFunction bfs_func, 
+                                        const CSRGraph& deviceCSRGraph,
+                                        const CSCGraph& deviceCSCGraph, 
+                                        int start_vertex, int warmup, int reps) {
+    // Warmup runs
+    for (int i = 0; i < warmup; i++) {
+        int* result = bfs_func(deviceCSRGraph, deviceCSCGraph, start_vertex, 0.1);
+        free(result);
+    }
+    
+    // Timing runs
+    cudaEvent_t start, stop;
+    gpuErrchk(cudaEventCreate(&start));
+    gpuErrchk(cudaEventCreate(&stop));
+    
+    float total_time_ms = 0.0f;
+    
+    for (int i = 0; i < reps; i++) {
+        clear_l2();  // Clear L2 cache to reduce inter-run effects
+        
+        gpuErrchk(cudaEventRecord(start, 0));
+        int* result = bfs_func(deviceCSRGraph, deviceCSCGraph, start_vertex, 0.1);
+        gpuErrchk(cudaEventRecord(stop, 0));
+        gpuErrchk(cudaEventSynchronize(stop));
+        
+        float elapsed_ms = 0.0f;
+        gpuErrchk(cudaEventElapsedTime(&elapsed_ms, start, stop));
+        total_time_ms += elapsed_ms;
+        
+        free(result);
+    }
+    
+    gpuErrchk(cudaEventDestroy(start));
+    gpuErrchk(cudaEventDestroy(stop));
+    
+    return total_time_ms / reps;
+}
+
 // Main function with benchmarking
 int main() {
     // Parameters for benchmarking
@@ -217,7 +256,11 @@ int main() {
     int* frontier_result = bfsParallelFrontierVertexCentricDevice(deviceVerifyGraphCSR, start_vertex);
     bool frontier_correct = compareBFSResults(reference_result, frontier_result, verifyGraphCSR.numVertices, false);
     
-    bool all_correct = push_correct && pull_correct && edge_correct && frontier_correct;
+    // Check direction-optimized BFS
+    int* dir_opt_result = bfsDirectionOptimizedDevice(deviceVerifyGraphCSR, deviceVerifyGraphCSC, start_vertex, 0.1);
+    bool dir_opt_correct = compareBFSResults(reference_result, dir_opt_result, verifyGraphCSR.numVertices, false);
+    
+    bool all_correct = push_correct && pull_correct && edge_correct && frontier_correct && dir_opt_correct;
     
     // Clean up verification resources
     free(reference_result);
@@ -225,6 +268,7 @@ int main() {
     free(pull_result);
     free(edge_result);
     free(frontier_result);
+    free(dir_opt_result);
     freeCSRGraphOnDevice(deviceVerifyGraphCSR);
     freeCSCGraphOnDevice(deviceVerifyGraphCSC);
     freeCOOGraphOnDevice(deviceVerifyGraphCOO);
@@ -279,7 +323,11 @@ int main() {
         int* par_frontier_result = bfsParallelFrontierVertexCentricDevice(deviceScaleFreeCSR, start_vertex);
         bool frontier_ok = compareBFSResults(seq_result, par_frontier_result, scaleFreeCSR.numVertices, false);
         
-        bool correct = push_ok && pull_ok && edge_ok && frontier_ok;
+        // Add direction-optimized BFS verification
+        int* dir_opt_result = bfsDirectionOptimizedDevice(deviceScaleFreeCSR, deviceScaleFreeCSC, start_vertex, 0.1);
+        bool dir_opt_ok = compareBFSResults(seq_result, dir_opt_result, scaleFreeCSR.numVertices, false);
+        
+        bool scale_free_correct = push_ok && pull_ok && edge_ok && frontier_ok && dir_opt_ok;
         
         // Free the verification results
         free(seq_result);
@@ -287,8 +335,9 @@ int main() {
         free(par_pull_result);
         free(par_edge_result);
         free(par_frontier_result);
+        free(dir_opt_result);
         
-        if (!correct) {
+        if (!scale_free_correct) {
             printf("ERROR: Skipping this graph size due to correctness issues!\n\n");
             
             // Free memory and continue to next size
@@ -337,6 +386,15 @@ int main() {
         float frontier_time = benchmark_parallel_csr_bfs(bfsParallelFrontierVertexCentricDevice, 
                                                       deviceScaleFreeCSR, start_vertex, warmup_runs, timing_runs);
         printf("%.2f ms (%.2fx speedup)\n", frontier_time, seq_time / frontier_time);
+        
+        // Benchmark direction-optimized BFS
+        printf("Direction-Optimized BFS: ");
+        float dir_opt_time = benchmark_direction_optimized_bfs(
+            [](const CSRGraph& graph, const CSCGraph& cscGraph, int startNode, float threshold) { 
+                return bfsDirectionOptimizedDevice(graph, cscGraph, startNode, threshold); 
+            },
+            deviceScaleFreeCSR, deviceScaleFreeCSC, start_vertex, warmup_runs, timing_runs);
+        printf("%.2f ms (%.2fx speedup)\n", dir_opt_time, seq_time / dir_opt_time);
         
         printf("\n");
         
@@ -391,7 +449,11 @@ int main() {
     int* sw_frontier_result = bfsParallelFrontierVertexCentricDevice(deviceSmallWorldCSR, start_vertex);
     bool sw_frontier_ok = compareBFSResults(sw_seq_result, sw_frontier_result, smallWorldCSR.numVertices, false);
     
-    bool small_world_correct = sw_push_ok && sw_pull_ok && sw_edge_ok && sw_frontier_ok;
+    // Add direction-optimized BFS verification
+    int* sw_dir_opt_result = bfsDirectionOptimizedDevice(deviceSmallWorldCSR, deviceSmallWorldCSC, start_vertex, 0.1);
+    bool sw_dir_opt_ok = compareBFSResults(sw_seq_result, sw_dir_opt_result, smallWorldCSR.numVertices, false);
+    
+    bool small_world_correct = sw_push_ok && sw_pull_ok && sw_edge_ok && sw_frontier_ok && sw_dir_opt_ok;
     
     // Free verification results
     free(sw_seq_result);
@@ -399,6 +461,7 @@ int main() {
     free(sw_pull_result);
     free(sw_edge_result);
     free(sw_frontier_result);
+    free(sw_dir_opt_result);
     
     if (!small_world_correct) {
         printf("ERROR: Skipping small-world graph benchmark due to correctness issues!\n");
@@ -451,6 +514,15 @@ int main() {
     float frontier_time = benchmark_parallel_csr_bfs(bfsParallelFrontierVertexCentricDevice, 
                                                   deviceSmallWorldCSR, start_vertex, warmup_runs, timing_runs);
     printf("%.2f ms (%.2fx speedup)\n", frontier_time, seq_time / frontier_time);
+    
+    // Benchmark direction-optimized BFS
+    printf("Direction-Optimized BFS: ");
+    float dir_opt_time = benchmark_direction_optimized_bfs(
+        [](const CSRGraph& graph, const CSCGraph& cscGraph, int startNode, float threshold) { 
+            return bfsDirectionOptimizedDevice(graph, cscGraph, startNode, threshold); 
+        },
+        deviceSmallWorldCSR, deviceSmallWorldCSC, start_vertex, warmup_runs, timing_runs);
+    printf("%.2f ms (%.2fx speedup)\n", dir_opt_time, seq_time / dir_opt_time);
     
     // Free device graph memory
     freeCSRGraphOnDevice(deviceSmallWorldCSR);
