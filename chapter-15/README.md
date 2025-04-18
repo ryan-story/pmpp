@@ -206,6 +206,8 @@ Two of them, but there is no vertices that are still not visited, hence no will 
 
 **Implement the host code for the direction-optimized BFS implementation described in Section 15.3**
 
+Full impmenetnation to be found in [bfs_parallel.cu](./code/src/bfs_parallel.cu):
+
 ```cpp
 int* bfsDirectionOptimizedDevice(const CSRGraph& deviceCSRGraph, const CSCGraph& deviceCSCGraph, int startingNode, float alpha) {
     // Initialize host levels array
@@ -293,3 +295,83 @@ int* bfsDirectionOptimizedDevice(const CSRGraph& deviceCSRGraph, const CSCGraph&
 ### Exercise 3
 
 **Implement the single-block BFS kernel described in Section 15.7.**
+
+Full impmenetnation to be found in [bfs_parallel.cu](./code/src/bfs_parallel.cu):
+
+```cpp
+__global__ void bfs_multi_level_frontier_kernel(CSRGraph graph, int* levels, 
+                                         int* frontier, int* frontierSize,
+                                         int* nextFrontier, int* nextFrontierSize,
+                                         int currLevel) {
+    // Shared memory for local frontier management
+    __shared__ int localFrontier[LOCAL_FRONTIER_CAPACITY];
+    __shared__ int localFrontierSize;
+    __shared__ int nextLocalFrontierSize;
+    __shared__ bool overflowed;
+    
+    // Initialize shared variables
+    if (threadIdx.x == 0) {
+        localFrontierSize = *frontierSize;
+        nextLocalFrontierSize = 0;
+        overflowed = false;
+        
+        // Copy initial frontier to shared memory
+        for (int i = 0; i < localFrontierSize && i < LOCAL_FRONTIER_CAPACITY; i++) {
+            localFrontier[i] = frontier[i];
+        }
+    }
+    
+    __syncthreads();
+    
+    // Process current frontier vertices
+    for (int i = threadIdx.x; i < localFrontierSize; i += blockDim.x) {
+        int vertex = localFrontier[i];
+        
+        // Explore neighbors
+        for (unsigned int edge = graph.srcPtrs[vertex]; 
+             edge < graph.srcPtrs[vertex + 1]; edge++) {
+            unsigned int neighbor = graph.dst[edge];
+            
+            // If neighbor not visited, add to next frontier
+            if (atomicCAS(&levels[neighbor], -1, currLevel) == -1) {
+                int idx = atomicAdd(&nextLocalFrontierSize, 1);
+                
+                // Check if the next frontier exceeds capacity
+                if (idx < LOCAL_FRONTIER_CAPACITY) {
+                    localFrontier[idx] = neighbor;
+                } else {
+                    // Mark as overflowed - need to switch to multi-block kernel
+                    overflowed = true;
+                    
+                    // Add to global frontier directly
+                    int globalIdx = atomicAdd(nextFrontierSize, 1);
+                    nextFrontier[globalIdx] = neighbor;
+                }
+            }
+        }
+    }
+    
+    __syncthreads();
+    
+    // Update for next iteration or return results
+    if (threadIdx.x == 0) {
+        if (overflowed) {
+            // Copy remaining valid local frontier entries to global
+            for (int i = 0; i < nextLocalFrontierSize && i < LOCAL_FRONTIER_CAPACITY; i++) {
+                int globalIdx = atomicAdd(nextFrontierSize, 1);
+                nextFrontier[globalIdx] = localFrontier[i];
+            }
+            // Signal that we need to switch to multi-block
+            *frontierSize = 0;
+        } else {
+            // We can continue with single-block
+            *frontierSize = nextLocalFrontierSize;
+            
+            // Copy the next frontier for the host
+            for (int i = 0; i < nextLocalFrontierSize; i++) {
+                frontier[i] = localFrontier[i];
+            }
+        }
+    }
+}
+```

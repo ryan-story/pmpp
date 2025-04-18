@@ -720,8 +720,7 @@ int* bfsDirectionOptimizedDevice(const CSRGraph& deviceCSRGraph, const CSCGraph&
 }
 
 
-// New single-block kernel for processing small frontiers
-__global__ void bfs_small_frontier_kernel(CSRGraph graph, int* levels, 
+__global__ void bfs_multi_level_frontier_kernel(CSRGraph graph, int* levels, 
                                          int* frontier, int* frontierSize,
                                          int* nextFrontier, int* nextFrontierSize,
                                          int currLevel) {
@@ -829,7 +828,7 @@ int* bfsParallelFrontierVertexCentricOptimizedDevice(const CSRGraph& deviceGraph
             cudaMemcpy(d_nextFrontierSize, &resetSize, sizeof(int), cudaMemcpyHostToDevice);
             
             // Process with small-frontier kernel
-            bfs_small_frontier_kernel<<<1, 256>>>(
+            bfs_multi_level_frontier_kernel<<<1, 256>>>(
                 deviceGraph, d_levels, 
                 d_currentFrontier, d_frontierSize,
                 d_nextFrontier, d_nextFrontierSize,
