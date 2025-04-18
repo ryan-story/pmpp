@@ -1,6 +1,4 @@
-#ifndef UTILS_H
-#define UTILS_H
-
+#ifndef CHAPTER_15_CODE_INCLUDE_UTILS_H_
+#define CHAPTER_15_CODE_INCLUDE_UTILS_H_
 bool compareBFSResults(int* sequentialLevels, int* parallelLevels, int numVertices, bool printDetails = false);
-
-#endif  // UTILS_H
+#endif  // CHAPTER_15_CODE_INCLUDE_UTILS_H_

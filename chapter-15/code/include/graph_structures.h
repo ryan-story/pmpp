@@ -1,20 +1,17 @@
-#ifndef GRAPH_STRUCTURES_H
-#define GRAPH_STRUCTURES_H
-
+#ifndef CHAPTER_15_CODE_INCLUDE_GRAPH_STRUCTURES_H_
+#define CHAPTER_15_CODE_INCLUDE_GRAPH_STRUCTURES_H_
 struct CSRGraph {
     int* srcPtrs;
     int* dst;
     int* values;
     int numVertices;
 };
-
 struct CSCGraph {
     int* dstPtrs;
     int* src;
     int* values;
     int numVertices;
 };
-
 struct COOGraph {
     int* scr;
     int* dst;
@@ -22,5 +19,4 @@ struct COOGraph {
     int numEdges;
     int numVertices;
 };
-
-#endif  // GRAPH_STRUCTURES_H
+#endif  // CHAPTER_15_CODE_INCLUDE_GRAPH_STRUCTURES_H_
