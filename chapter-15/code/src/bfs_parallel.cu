@@ -357,7 +357,6 @@ int* bfsParallelFrontierVertexCentric(const CSRGraph& hostGraph, int startingNod
     CSRGraph deviceGraph = {
         .srcPtrs = d_srcPtrs, .dst = d_dst, .values = d_values, .numVertices = hostGraph.numVertices};
 
-
     int currLevel = 1;
 
     // Continue BFS as long as there are vertices in the frontier
