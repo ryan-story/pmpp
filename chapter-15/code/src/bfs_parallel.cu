@@ -357,8 +357,6 @@ int* bfsParallelFrontierVertexCentric(const CSRGraph& hostGraph, int startingNod
     CSRGraph deviceGraph = {
         .srcPtrs = d_srcPtrs, .dst = d_dst, .values = d_values, .numVertices = hostGraph.numVertices};
 
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (hostGraph.numVertices + threadsPerBlock - 1) / threadsPerBlock;
 
     int currLevel = 1;
 
@@ -627,8 +625,8 @@ int* bfsDirectionOptimized(const CSRGraph& hostCSRGraph, const CSCGraph& hostCSC
     int* result = bfsDirectionOptimizedDevice(deviceCSRGraph, deviceCSCGraph, startingNode, alpha);
 
     // Free device memory
-    freeCSRGraphOnDevice(deviceCSRGraph);
-    freeCSCGraphOnDevice(deviceCSCGraph);
+    freeCSRGraphOnDevice(&deviceCSRGraph);
+    freeCSCGraphOnDevice(&deviceCSCGraph);
 
     return result;
 }

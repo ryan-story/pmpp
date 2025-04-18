@@ -275,9 +275,9 @@ int main() {
     free(frontier_result);
     free(frontier_opt_result);
     free(dir_opt_result);
-    freeCSRGraphOnDevice(deviceVerifyGraphCSR);
-    freeCSCGraphOnDevice(deviceVerifyGraphCSC);
-    freeCOOGraphOnDevice(deviceVerifyGraphCOO);
+    freeCSRGraphOnDevice(&deviceVerifyGraphCSR);
+    freeCSCGraphOnDevice(&deviceVerifyGraphCSC);
+    freeCOOGraphOnDevice(&deviceVerifyGraphCOO);
     free(verifyGraphCOO.scr);
     free(verifyGraphCOO.dst);
     free(verifyGraphCOO.values);
@@ -352,9 +352,9 @@ int main() {
             printf("ERROR: Skipping this graph size due to correctness issues!\n\n");
 
             // Free memory and continue to next size
-            freeCSRGraphOnDevice(deviceScaleFreeCSR);
-            freeCSCGraphOnDevice(deviceScaleFreeCSC);
-            freeCOOGraphOnDevice(deviceScaleFreeCOO);
+            freeCSRGraphOnDevice(&deviceScaleFreeCSR);
+            freeCSCGraphOnDevice(&deviceScaleFreeCSC);
+            freeCOOGraphOnDevice(&deviceScaleFreeCOO);
             free(scaleFreeCOO.scr);
             free(scaleFreeCOO.dst);
             free(scaleFreeCOO.values);
@@ -417,9 +417,9 @@ int main() {
         printf("\n");
 
         // Free device graph memory
-        freeCSRGraphOnDevice(deviceScaleFreeCSR);
-        freeCSCGraphOnDevice(deviceScaleFreeCSC);
-        freeCOOGraphOnDevice(deviceScaleFreeCOO);
+        freeCSRGraphOnDevice(&deviceScaleFreeCSR);
+        freeCSCGraphOnDevice(&deviceScaleFreeCSC);
+        freeCOOGraphOnDevice(&deviceScaleFreeCOO);
 
         // Free host graph memory
         free(scaleFreeCOO.scr);
@@ -491,9 +491,9 @@ int main() {
         printf("ERROR: Skipping small-world graph benchmark due to correctness issues!\n");
 
         // Free device graph memory
-        freeCSRGraphOnDevice(deviceSmallWorldCSR);
-        freeCSCGraphOnDevice(deviceSmallWorldCSC);
-        freeCOOGraphOnDevice(deviceSmallWorldCOO);
+        freeCSRGraphOnDevice(&deviceSmallWorldCSR);
+        freeCSCGraphOnDevice(&deviceSmallWorldCSC);
+        freeCOOGraphOnDevice(&deviceSmallWorldCOO);
 
         // Free host graph memory
         free(smallWorldCOO.scr);
@@ -555,9 +555,9 @@ int main() {
     printf("%.2f ms (%.2fx speedup)\n", sw_dir_opt_time, sw_seq_time / sw_dir_opt_time);
 
     // Free device graph memory
-    freeCSRGraphOnDevice(deviceSmallWorldCSR);
-    freeCSCGraphOnDevice(deviceSmallWorldCSC);
-    freeCOOGraphOnDevice(deviceSmallWorldCOO);
+    freeCSRGraphOnDevice(&deviceSmallWorldCSR);
+    freeCSCGraphOnDevice(&deviceSmallWorldCSC);
+    freeCOOGraphOnDevice(&deviceSmallWorldCOO);
 
     // Free host graph memory
     free(smallWorldCOO.scr);

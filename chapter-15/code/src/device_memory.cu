@@ -19,10 +19,13 @@ CSRGraph allocateCSRGraphOnDevice(const CSRGraph& hostGraph) {
     return {d_srcPtrs, d_dst, d_values, hostGraph.numVertices};
 }
 
-void freeCSRGraphOnDevice(CSRGraph& deviceGraph) {
-    cudaFree(deviceGraph.srcPtrs);
-    cudaFree(deviceGraph.dst);
-    cudaFree(deviceGraph.values);
+void freeCSRGraphOnDevice(CSRGraph* deviceGraph) {
+    cudaFree(deviceGraph->srcPtrs);
+    deviceGraph->srcPtrs = nullptr;
+    cudaFree(deviceGraph->dst);
+    deviceGraph->dst = nullptr;
+    cudaFree(deviceGraph->values);
+    deviceGraph->values = nullptr;
 }
 
 // CSC Graph memory management
@@ -42,10 +45,13 @@ CSCGraph allocateCSCGraphOnDevice(const CSCGraph& hostGraph) {
     return {d_dstPtrs, d_src, d_values, hostGraph.numVertices};
 }
 
-void freeCSCGraphOnDevice(CSCGraph& deviceGraph) {
-    cudaFree(deviceGraph.dstPtrs);
-    cudaFree(deviceGraph.src);
-    cudaFree(deviceGraph.values);
+void freeCSCGraphOnDevice(CSCGraph* deviceGraph) {
+    cudaFree(deviceGraph->dstPtrs);
+    deviceGraph->dstPtrs = nullptr;
+    cudaFree(deviceGraph->src);
+    deviceGraph->src = nullptr;
+    cudaFree(deviceGraph->values);
+    deviceGraph->values = nullptr;
 }
 
 // COO Graph memory management
@@ -64,10 +70,13 @@ COOGraph allocateCOOGraphOnDevice(const COOGraph& hostGraph) {
     return {d_src, d_dst, d_values, hostGraph.numEdges, hostGraph.numVertices};
 }
 
-void freeCOOGraphOnDevice(COOGraph& deviceGraph) {
-    cudaFree(deviceGraph.scr);
-    cudaFree(deviceGraph.dst);
-    cudaFree(deviceGraph.values);
+void freeCOOGraphOnDevice(COOGraph* deviceGraph) {
+    cudaFree(deviceGraph->scr);
+    deviceGraph->scr = nullptr;
+    cudaFree(deviceGraph->dst);
+    deviceGraph->dst = nullptr;
+    cudaFree(deviceGraph->values);
+    deviceGraph->values = nullptr;
 }
 
 // BFS level arrays management
