@@ -32,7 +32,7 @@ bool compareBFSResults(int* sequentialLevels, int* parallelLevels, int numVertic
         printf("------------------------------------------------\n");
         printf("Overall result: %s\n", resultsMatch ? "Both implementations match!" : "Implementations differ!");
     } else if (resultsMatch) {
-        printf("All BFS results match between sequential and parallel implementations.\n");
+        // printf("All BFS results match between sequential and parallel implementations.\n");
     }
 
     return resultsMatch;

@@ -2,6 +2,104 @@
 
 ## Code
 
+We implement (nearly) all methods mentioned in this chapter in particular:
+
+- Vertex Centric Push 
+- Vertex Centric Pull
+- Vertex Centric direction optimized, first push then pull
+- Edge Centric
+- Frontier Vertex Centric (with and without privatization)
+- Frontier Vertex Centric with the single-block BFS optimization from section `15.7` 
+
+We also benchmark the performance on syntethically generated graphs using, scale free and small-world methods. 
+
+Compile the benchmark using
+
+```make
+bash
+```
+
+and run it via
+
+```bash
+./bfs
+```
+
+You should see something resembling:
+
+```
+BFS Benchmark Results
+=====================
+
+Verifying BFS implementations correctness...
+All BFS implementations passed correctness verification!
+
+Graph Size: 1000 vertices
+--------------------
+Generating scale-free graph...
+Allocating graphs on device...
+Verifying BFS correctness for 1000 vertices graph... Passed!
+Sequential BFS: 0.37 ms
+Push Vertex-Centric BFS: 0.33 ms (1.12x speedup)
+Pull Vertex-Centric BFS: 0.14 ms (2.57x speedup)
+Edge-Centric BFS: 0.08 ms (4.89x speedup)
+Frontier-based BFS: 0.59 ms (0.63x speedup)
+Optimized Frontier-based BFS: 0.60 ms (0.62x speedup)
+Direction-Optimized BFS: 0.13 ms (2.82x speedup)
+
+Graph Size: 5000 vertices
+--------------------
+Generating scale-free graph...
+Allocating graphs on device...
+Verifying BFS correctness for 5000 vertices graph... Passed!
+Sequential BFS: 2.11 ms
+Push Vertex-Centric BFS: 0.71 ms (2.97x speedup)
+Pull Vertex-Centric BFS: 0.24 ms (8.82x speedup)
+Edge-Centric BFS: 0.10 ms (20.50x speedup)
+Frontier-based BFS: 1.24 ms (1.70x speedup)
+Optimized Frontier-based BFS: 1.25 ms (1.69x speedup)
+Direction-Optimized BFS: 0.24 ms (8.71x speedup)
+
+Graph Size: 10000 vertices
+--------------------
+Generating scale-free graph...
+Allocating graphs on device...
+Verifying BFS correctness for 10000 vertices graph... Passed!
+Sequential BFS: 4.71 ms
+Push Vertex-Centric BFS: 1.00 ms (4.69x speedup)
+Pull Vertex-Centric BFS: 0.32 ms (14.57x speedup)
+Edge-Centric BFS: 0.13 ms (35.46x speedup)
+Frontier-based BFS: 1.77 ms (2.66x speedup)
+Optimized Frontier-based BFS: 1.83 ms (2.58x speedup)
+Direction-Optimized BFS: 0.35 ms (13.57x speedup)
+
+Graph Size: 20000 vertices
+--------------------
+Generating scale-free graph...
+Allocating graphs on device...
+Verifying BFS correctness for 20000 vertices graph... Passed!
+Sequential BFS: 10.26 ms
+Push Vertex-Centric BFS: 1.44 ms (7.12x speedup)
+Pull Vertex-Centric BFS: 0.44 ms (23.53x speedup)
+Edge-Centric BFS: 0.19 ms (54.81x speedup)
+Frontier-based BFS: 2.49 ms (4.11x speedup)
+Optimized Frontier-based BFS: 2.60 ms (3.95x speedup)
+Direction-Optimized BFS: 0.48 ms (21.54x speedup)
+
+Small-World Graph (10000 vertices)
+--------------------
+Generating small-world graph...
+Verifying BFS correctness for small-world graph... Passed!
+Sequential BFS: 1.14 ms
+Push Vertex-Centric BFS: 0.20 ms (5.80x speedup)
+Pull Vertex-Centric BFS: 0.16 ms (7.23x speedup)
+Edge-Centric BFS: 0.13 ms (9.13x speedup)
+Frontier-based BFS: 0.32 ms (3.54x speedup)
+Optimized Frontier-based BFS: 0.31 ms (3.71x speedup)
+Direction-Optimized BFS: 0.23 ms (4.91x speedup)
+````
+
+
 ## Exercises
 
 ### Exercise 1
