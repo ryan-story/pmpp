@@ -17,8 +17,8 @@ We also benchmark the performance on synthetically generated graphs using [scale
 
 Compile the benchmark using
 
-```make
-bash
+```bash
+make
 ```
 
 and run it via

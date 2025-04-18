@@ -17,6 +17,7 @@ The following repo documents my journey to learn CUDA programming. You can find 
 - [Chapter 12](chapter-12/README.md)
 - [Chapter 13](chapter-13/README.md)
 - [Chapter 14](chapter-14/README.md)
+- [Chapter 15](chapter-15/README.md)
 
 ## Running the code
 
