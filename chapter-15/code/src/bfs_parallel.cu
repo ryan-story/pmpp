@@ -718,3 +718,225 @@ int* bfsDirectionOptimizedDevice(const CSRGraph& deviceCSRGraph, const CSCGraph&
 
     return hostLevels;
 }
+
+
+// New single-block kernel for processing small frontiers
+__global__ void bfs_small_frontier_kernel(CSRGraph graph, int* levels, 
+                                         int* frontier, int* frontierSize,
+                                         int* nextFrontier, int* nextFrontierSize,
+                                         int currLevel) {
+    // Shared memory for local frontier management
+    __shared__ int localFrontier[LOCAL_FRONTIER_CAPACITY];
+    __shared__ int localFrontierSize;
+    __shared__ int nextLocalFrontierSize;
+    __shared__ bool overflowed;
+    
+    // Initialize shared variables
+    if (threadIdx.x == 0) {
+        localFrontierSize = *frontierSize;
+        nextLocalFrontierSize = 0;
+        overflowed = false;
+        
+        // Copy initial frontier to shared memory
+        for (int i = 0; i < localFrontierSize && i < LOCAL_FRONTIER_CAPACITY; i++) {
+            localFrontier[i] = frontier[i];
+        }
+    }
+    
+    __syncthreads();
+    
+    // Process current frontier vertices
+    for (int i = threadIdx.x; i < localFrontierSize; i += blockDim.x) {
+        int vertex = localFrontier[i];
+        
+        // Explore neighbors
+        for (unsigned int edge = graph.srcPtrs[vertex]; 
+             edge < graph.srcPtrs[vertex + 1]; edge++) {
+            unsigned int neighbor = graph.dst[edge];
+            
+            // If neighbor not visited, add to next frontier
+            if (atomicCAS(&levels[neighbor], -1, currLevel) == -1) {
+                int idx = atomicAdd(&nextLocalFrontierSize, 1);
+                
+                // Check if the next frontier exceeds capacity
+                if (idx < LOCAL_FRONTIER_CAPACITY) {
+                    localFrontier[idx] = neighbor;
+                } else {
+                    // Mark as overflowed - need to switch to multi-block kernel
+                    overflowed = true;
+                    
+                    // Add to global frontier directly
+                    int globalIdx = atomicAdd(nextFrontierSize, 1);
+                    nextFrontier[globalIdx] = neighbor;
+                }
+            }
+        }
+    }
+    
+    __syncthreads();
+    
+    // Update for next iteration or return results
+    if (threadIdx.x == 0) {
+        if (overflowed) {
+            // Copy remaining valid local frontier entries to global
+            for (int i = 0; i < nextLocalFrontierSize && i < LOCAL_FRONTIER_CAPACITY; i++) {
+                int globalIdx = atomicAdd(nextFrontierSize, 1);
+                nextFrontier[globalIdx] = localFrontier[i];
+            }
+            // Signal that we need to switch to multi-block
+            *frontierSize = 0;
+        } else {
+            // We can continue with single-block
+            *frontierSize = nextLocalFrontierSize;
+            
+            // Copy the next frontier for the host
+            for (int i = 0; i < nextLocalFrontierSize; i++) {
+                frontier[i] = localFrontier[i];
+            }
+        }
+    }
+}
+
+// Device implementation of optimized frontier-based BFS
+int* bfsParallelFrontierVertexCentricOptimizedDevice(const CSRGraph& deviceGraph, int startingNode) {
+    // Create device levels array
+    int* d_levels = allocateAndInitLevelsOnDevice(deviceGraph.numVertices, startingNode);
+    
+    // Initialize frontiers
+    int* d_currentFrontier;
+    int* d_nextFrontier;
+    int* d_frontierSize;
+    int* d_nextFrontierSize;
+    
+    cudaMalloc(&d_currentFrontier, sizeof(int) * deviceGraph.numVertices);
+    cudaMalloc(&d_nextFrontier, sizeof(int) * deviceGraph.numVertices);
+    cudaMalloc(&d_frontierSize, sizeof(int));
+    cudaMalloc(&d_nextFrontierSize, sizeof(int));
+    
+    // Initial frontier contains just the starting node
+    int hostFrontierSize = 1;
+    cudaMemcpy(d_currentFrontier, &startingNode, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_frontierSize, &hostFrontierSize, sizeof(int), cudaMemcpyHostToDevice);
+    
+    int currentLevel = 1;
+    bool useSingleBlock = true; // Start with single-block optimization
+    
+    // Continue BFS until no more vertices in frontier
+    while (hostFrontierSize > 0) {
+        if (useSingleBlock && hostFrontierSize <= LOCAL_FRONTIER_CAPACITY/2) { // Use half capacity as safety margin
+            // Reset next frontier size
+            int resetSize = 0;
+            cudaMemcpy(d_nextFrontierSize, &resetSize, sizeof(int), cudaMemcpyHostToDevice);
+            
+            // Process with small-frontier kernel
+            bfs_small_frontier_kernel<<<1, 256>>>(
+                deviceGraph, d_levels, 
+                d_currentFrontier, d_frontierSize,
+                d_nextFrontier, d_nextFrontierSize,
+                currentLevel
+            );
+            
+            // Check if we can continue with single-block
+            cudaMemcpy(&hostFrontierSize, d_frontierSize, sizeof(int), cudaMemcpyDeviceToHost);
+            
+            if (hostFrontierSize == 0) {
+                // We need to switch to multi-block kernel
+                int nextSize;
+                cudaMemcpy(&nextSize, d_nextFrontierSize, sizeof(int), cudaMemcpyDeviceToHost);
+                
+                if (nextSize == 0) {
+                    // BFS is complete
+                    break;
+                }
+                
+                // Swap frontiers
+                int* temp = d_currentFrontier;
+                d_currentFrontier = d_nextFrontier;
+                d_nextFrontier = temp;
+                
+                hostFrontierSize = nextSize;
+                cudaMemcpy(d_frontierSize, &hostFrontierSize, sizeof(int), cudaMemcpyHostToDevice);
+                
+                useSingleBlock = false;
+            }
+        } else {
+            // Reset next frontier size
+            int resetSize = 0;
+            cudaMemcpy(d_nextFrontierSize, &resetSize, sizeof(int), cudaMemcpyHostToDevice);
+            
+            // Process with regular multi-block kernel
+            int threadsPerBlock = 256;
+            int blocksPerGrid = (hostFrontierSize + threadsPerBlock - 1) / threadsPerBlock;
+            
+            bsf_frontier_vertex_centric_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+                deviceGraph, d_levels,
+                d_currentFrontier, d_nextFrontier,
+                hostFrontierSize, d_nextFrontierSize, currentLevel
+            );
+            
+            // Get next frontier size
+            cudaMemcpy(&hostFrontierSize, d_nextFrontierSize, sizeof(int), cudaMemcpyDeviceToHost);
+            
+            if (hostFrontierSize == 0) {
+                // BFS is complete
+                break;
+            }
+            
+            // Swap frontiers
+            int* temp = d_currentFrontier;
+            d_currentFrontier = d_nextFrontier;
+            d_nextFrontier = temp;
+            
+            // Check if we can go back to single-block mode
+            if (hostFrontierSize <= LOCAL_FRONTIER_CAPACITY/2) {
+                useSingleBlock = true;
+            }
+        }
+        
+        // Always increment level after processing a frontier
+        currentLevel++;
+    }
+    
+    // Copy results to host
+    int* hostLevels = copyLevelsToHost(d_levels, deviceGraph.numVertices);
+    
+    // Clean up
+    cudaFree(d_levels);
+    cudaFree(d_currentFrontier);
+    cudaFree(d_nextFrontier);
+    cudaFree(d_frontierSize);
+    cudaFree(d_nextFrontierSize);
+    
+    return hostLevels;
+}
+
+// Host wrapper implementation
+int* bfsParallelFrontierVertexCentricOptimized(const CSRGraph& hostGraph, int startingNode) {
+    // Allocate graph on device
+    CSRGraph deviceGraph;
+    
+    // Allocate memory
+    size_t srcPtrsSize = sizeof(int) * (hostGraph.numVertices + 1);
+    size_t dstSize = sizeof(int) * hostGraph.srcPtrs[hostGraph.numVertices];
+    
+    cudaMalloc(&deviceGraph.srcPtrs, srcPtrsSize);
+    cudaMalloc(&deviceGraph.dst, dstSize);
+    cudaMalloc(&deviceGraph.values, dstSize);
+    
+    // Copy data to device
+    cudaMemcpy(deviceGraph.srcPtrs, hostGraph.srcPtrs, srcPtrsSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceGraph.dst, hostGraph.dst, dstSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(deviceGraph.values, hostGraph.values, dstSize, cudaMemcpyHostToDevice);
+    
+    deviceGraph.numVertices = hostGraph.numVertices;
+    
+    // Run BFS
+    int* result = bfsParallelFrontierVertexCentricOptimizedDevice(deviceGraph, startingNode);
+    
+    // Clean up
+    cudaFree(deviceGraph.srcPtrs);
+    cudaFree(deviceGraph.dst);
+    cudaFree(deviceGraph.values);
+    
+    return result;
+}
