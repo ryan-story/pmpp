@@ -11,7 +11,9 @@ We implement (nearly) all methods mentioned in this chapter in particular:
 - Frontier Vertex Centric (with and without privatization)
 - Frontier Vertex Centric with the single-block BFS optimization from section `15.7` 
 
-We also benchmark the performance on syntethically generated graphs using, scale free and small-world methods. 
+You can find all of them in [bfs_parallel.cu](./code/src/bfs_parallel.cu). 
+
+We also benchmark the performance on synthetically generated graphs using [scale-free and small-world](./code/src/graph_generators.cu) methods. 
 
 Compile the benchmark using
 
@@ -138,7 +140,7 @@ We have 8 vertices - hence 8 threads and launched.
 
 **How many threads iterate over their vertex’s neighbors?**
 
-Two threads, for vectex `5` and for vertex `2` will iterate over their neighbouts. 
+Two threads, for vectex `5` and for vertex `2` will iterate over their neighbours. 
 
 ### Iteration 3
 
@@ -167,7 +169,7 @@ This is also the last iteration, all of the vertices are already visited so, no 
 ### Iteration 1
 **How many threads are launched?**
 
-We have 8 verices so we lanuch 8 threads. 
+We have 8 verices so we launch 8 threads. 
 
 **How many threads iterate over their vertex’s neighbors?**
 
@@ -180,7 +182,7 @@ Two threads, for vertex `5` and for vertex `2` will label their vertex.
 ### Iteration 2
 **How many threads are launched?**
 
-We have 8 verices so we lanuch 8 threads. 
+We have 8 verices so we launch 8 threads. 
 
 **How many threads iterate over their vertex’s neighbors?**
 
@@ -193,7 +195,7 @@ We have 8 verices so we lanuch 8 threads.
 ### Iteration 3
 **How many threads are launched?**
 
-Yet again - 8 vertices 8 threads lanuched. 
+Yet again - 8 vertices 8 threads launched. 
 
 **How many threads iterate over their vertex’s neighbors?**
 
@@ -207,7 +209,7 @@ Two threads will label their vertex.
 
 **How many threads are launched?**
 
-Yet again - 8 vertices 8 threads lanuched. 
+Yet again - 8 vertices 8 threads launched. 
 
 **How many threads iterate over their vertex’s neighbors?**
 
@@ -280,7 +282,7 @@ We have two elements in `prevFrontier`, so two threads are launched.
 
 **How many threads iterate over their vertex’s neighbors?**
 
-Two threads, for vertices `5` and `2` are iterating over their vetex neighbours. We add `[1, 7, 3]` to `currFrontier`. 
+Two threads, for vertices `5` and `2` are iterating over their vertex neighbours. We add `[1, 7, 3]` to `currFrontier`. 
 
 ### Iteration 3
 **How many threads are launched?**

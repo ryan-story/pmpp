@@ -23,4 +23,4 @@ struct COOGraph {
     int numVertices;
 };
 
-#endif // GRAPH_STRUCTURES_H
+#endif  // GRAPH_STRUCTURES_H

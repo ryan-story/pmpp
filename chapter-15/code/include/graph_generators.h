@@ -6,4 +6,4 @@
 COOGraph generateScaleFreeGraphCOO(int numVertices, int edgesPerNewVertex);
 COOGraph generateSmallWorldGraphCOO(int numVertices, int k, float rewireProbability);
 
-#endif // GRAPH_GENERATORS_H
+#endif  // GRAPH_GENERATORS_H

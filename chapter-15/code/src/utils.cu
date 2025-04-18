@@ -1,4 +1,5 @@
 #include <stdio.h>
+
 #include "../include/utils.h"
 
 bool compareBFSResults(int* sequentialLevels, int* parallelLevels, int numVertices, bool printDetails) {

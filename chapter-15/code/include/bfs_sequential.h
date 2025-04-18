@@ -5,4 +5,4 @@
 
 int* bfs(const CSRGraph& graph, int startingNode);
 
-#endif // BFS_SEQUENTIAL_H
+#endif  // BFS_SEQUENTIAL_H

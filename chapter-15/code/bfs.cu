@@ -141,31 +141,39 @@ CSCGraph convertCSRtoCSC(const CSRGraph& csrGraph) {
 
 // Generate a scale-free graph using Barabási–Albert model
 COOGraph generateScaleFreeGraphCOO(int numVertices, int edgesPerNewVertex) {
-    if (numVertices < 3) numVertices = 3; // Minimum vertices
-    if (edgesPerNewVertex >= numVertices) edgesPerNewVertex = numVertices - 1;
-    if (edgesPerNewVertex < 1) edgesPerNewVertex = 1;
-    
+    if (numVertices < 3) {
+        numVertices = 3;  // Minimum vertices
+    }
+    if (edgesPerNewVertex >= numVertices) {
+        edgesPerNewVertex = numVertices - 1;
+    }
+    if (edgesPerNewVertex < 1) {
+        edgesPerNewVertex = 1;
+    }
+
     // Initialize with a small fully connected network of m0 vertices
     int m0 = edgesPerNewVertex + 1;
-    if (m0 >= numVertices) m0 = numVertices - 1;
-    
+    if (m0 >= numVertices) {
+        m0 = numVertices - 1;
+    }
+
     // Calculate maximum possible edges - be generous to avoid reallocation
     // Each new vertex adds edgesPerNewVertex*2 edges (bidirectional)
     int maxPossibleEdges = m0 * (m0 - 1) + (numVertices - m0) * edgesPerNewVertex * 2;
-    
+
     // Allocate COO graph with maximum possible size
     COOGraph graph;
     graph.numVertices = numVertices;
     graph.scr = (int*)malloc(sizeof(int) * maxPossibleEdges);
     graph.dst = (int*)malloc(sizeof(int) * maxPossibleEdges);
     graph.values = (int*)malloc(sizeof(int) * maxPossibleEdges);
-    
+
     // Set random seed
     srand(time(NULL));
-    
+
     // Initialize edge counter
     int edgeIdx = 0;
-    
+
     // Create initial complete graph
     for (int i = 0; i < m0; i++) {
         for (int j = 0; j < m0; j++) {
@@ -177,26 +185,26 @@ COOGraph generateScaleFreeGraphCOO(int numVertices, int edgesPerNewVertex) {
             }
         }
     }
-    
+
     // Track the degree of each vertex for preferential attachment
-    int* degree = (int*)calloc(numVertices, sizeof(int)); // Initialize with zeros
-    
+    int* degree = (int*)calloc(numVertices, sizeof(int));  // Initialize with zeros
+
     // Update degrees for initial vertices
     for (int i = 0; i < edgeIdx; i++) {
         degree[graph.scr[i]]++;
         degree[graph.dst[i]]++;
     }
-    
+
     // Add remaining vertices using preferential attachment
     for (int newVertex = m0; newVertex < numVertices; newVertex++) {
         int edgesAdded = 0;
-        
+
         // Create a probability distribution based on degrees
         int totalDegree = 0;
         for (int i = 0; i < newVertex; i++) {
             totalDegree += degree[i];
         }
-        
+
         // If total degree is 0, initialize with uniform probability
         if (totalDegree == 0) {
             for (int i = 0; i < newVertex; i++) {
@@ -204,27 +212,29 @@ COOGraph generateScaleFreeGraphCOO(int numVertices, int edgesPerNewVertex) {
             }
             totalDegree = newVertex;
         }
-        
+
         // Keep track of connections to avoid duplicates
         bool* connected = (bool*)calloc(newVertex, sizeof(bool));
-        
+
         // Add edges to existing vertices based on preferential attachment
         while (edgesAdded < edgesPerNewVertex && edgesAdded < newVertex) {
             // Choose target based on degree
             int target = -1;
             int randomValue = rand() % totalDegree;
             int cumulativeProbability = 0;
-            
+
             for (int i = 0; i < newVertex; i++) {
-                if (connected[i]) continue; // Skip already connected vertices
-                
+                if (connected[i]) {
+                    continue;  // Skip already connected vertices
+                }
+
                 cumulativeProbability += degree[i];
                 if (randomValue < cumulativeProbability) {
                     target = i;
                     break;
                 }
             }
-            
+
             // If no target found using probability, pick randomly from unconnected
             if (target == -1) {
                 // Find unconnected vertices
@@ -234,14 +244,14 @@ COOGraph generateScaleFreeGraphCOO(int numVertices, int edgesPerNewVertex) {
                         unconnected.push_back(i);
                     }
                 }
-                
+
                 if (!unconnected.empty()) {
                     target = unconnected[rand() % unconnected.size()];
                 } else {
-                    break; // No more vertices to connect to
+                    break;  // No more vertices to connect to
                 }
             }
-            
+
             // Add edge if valid target found
             if (target != -1 && !connected[target]) {
                 // Safety check for array bounds
@@ -249,34 +259,34 @@ COOGraph generateScaleFreeGraphCOO(int numVertices, int edgesPerNewVertex) {
                     printf("Error: Edge index exceeds maximum possible edges.\n");
                     break;
                 }
-                
+
                 // Add edge
                 graph.scr[edgeIdx] = newVertex;
                 graph.dst[edgeIdx] = target;
                 graph.values[edgeIdx] = 1;
                 edgeIdx++;
-                
+
                 // Add reverse edge (undirected graph)
                 graph.scr[edgeIdx] = target;
                 graph.dst[edgeIdx] = newVertex;
                 graph.values[edgeIdx] = 1;
                 edgeIdx++;
-                
+
                 // Update degrees and mark as connected
                 degree[newVertex]++;
                 degree[target]++;
                 connected[target] = true;
-                
+
                 edgesAdded++;
             }
         }
-        
+
         free(connected);
     }
-    
+
     // Set final edge count
     graph.numEdges = edgeIdx;
-    
+
     free(degree);
     return graph;
 }
@@ -284,36 +294,42 @@ COOGraph generateScaleFreeGraphCOO(int numVertices, int edgesPerNewVertex) {
 // Generate a small-world graph using Watts-Strogatz model
 COOGraph generateSmallWorldGraphCOO(int numVertices, int k, float rewireProbability) {
     // k is mean degree (must be even)
-    if (k % 2 != 0) k--;
-    if (k >= numVertices) k = numVertices - 1;
-    if (k < 2) k = 2;
-    
+    if (k % 2 != 0) {
+        k--;
+    }
+    if (k >= numVertices) {
+        k = numVertices - 1;
+    }
+    if (k < 2) {
+        k = 2;
+    }
+
     // Total edges in the graph
-    int totalEdges = numVertices * k / 2; // Undirected edges
-    
+    int totalEdges = numVertices * k / 2;  // Undirected edges
+
     // Allocate COO graph
     COOGraph graph;
     graph.numVertices = numVertices;
     graph.numEdges = totalEdges;
-    graph.scr = (int*)malloc(sizeof(int) * totalEdges * 2); // *2 for directed edges
+    graph.scr = (int*)malloc(sizeof(int) * totalEdges * 2);  // *2 for directed edges
     graph.dst = (int*)malloc(sizeof(int) * totalEdges * 2);
     graph.values = (int*)malloc(sizeof(int) * totalEdges * 2);
-    
+
     // Set random seed
     srand(time(NULL));
-    
+
     // Create initial ring lattice (store as COO)
     int edgeIdx = 0;
     for (int i = 0; i < numVertices; i++) {
-        for (int j = 1; j <= k/2; j++) {
+        for (int j = 1; j <= k / 2; j++) {
             int neighbor = (i + j) % numVertices;
-            
+
             // Add edge
             graph.scr[edgeIdx] = i;
             graph.dst[edgeIdx] = neighbor;
             graph.values[edgeIdx] = 1;
             edgeIdx++;
-            
+
             // Add reverse edge (undirected graph)
             graph.scr[edgeIdx] = neighbor;
             graph.dst[edgeIdx] = i;
@@ -321,78 +337,78 @@ COOGraph generateSmallWorldGraphCOO(int numVertices, int k, float rewireProbabil
             edgeIdx++;
         }
     }
-    
+
     // Create a copy of the original edges for rewiring
     int* originalDst = (int*)malloc(sizeof(int) * totalEdges * 2);
     memcpy(originalDst, graph.dst, sizeof(int) * totalEdges * 2);
-    
+
     // Track connections to avoid duplicates during rewiring
     bool** connections = (bool**)malloc(sizeof(bool*) * numVertices);
     for (int i = 0; i < numVertices; i++) {
         connections[i] = (bool*)calloc(numVertices, sizeof(bool));
     }
-    
+
     // Initialize connection matrix
     for (int i = 0; i < edgeIdx; i++) {
         int src = graph.scr[i];
         int dst = graph.dst[i];
         connections[src][dst] = true;
     }
-    
+
     // Rewire edges with probability p (only forward edges to avoid inconsistency)
     for (int i = 0; i < edgeIdx; i += 2) {
         float random = static_cast<float>(rand()) / RAND_MAX;
-        
+
         if (random < rewireProbability) {
             int src = graph.scr[i];
             int oldDst = graph.dst[i];
-            
+
             // Try to find a new target that isn't already connected
             int attempts = 0;
             int newDst;
             bool validTarget = false;
-            
+
             while (!validTarget && attempts < 50) {
                 newDst = rand() % numVertices;
-                
+
                 // Avoid self-loops and existing connections
                 if (newDst != src && !connections[src][newDst]) {
                     validTarget = true;
-                } 
-                
+                }
+
                 attempts++;
             }
-            
+
             // If found a valid new target, rewire the edge
             if (validTarget) {
                 // Remove old connection
                 connections[src][oldDst] = false;
                 connections[oldDst][src] = false;
-                
+
                 // Add new connection
                 connections[src][newDst] = true;
                 connections[newDst][src] = true;
-                
+
                 // Update edge in COO
                 graph.dst[i] = newDst;
-                
+
                 // Update reverse edge
                 graph.scr[i + 1] = newDst;
                 graph.dst[i + 1] = src;
             }
         }
     }
-    
+
     // Free memory
     for (int i = 0; i < numVertices; i++) {
         free(connections[i]);
     }
     free(connections);
     free(originalDst);
-    
+
     // Set final edge count
     graph.numEdges = edgeIdx;
-    
+
     return graph;
 }
 
@@ -417,11 +433,11 @@ int* bfs(const CSRGraph& graph, int startingNode) {
         queue.pop();
 
         for (int edge = graph.srcPtrs[vertex]; edge < graph.srcPtrs[vertex + 1]; edge++) {
-            int neigbour = graph.dst[edge];
-            if (!visited[neigbour]) {
-                levels[neigbour] = levels[vertex] + 1;
-                visited[neigbour] = true;
-                queue.push(neigbour);
+            int neighbour = graph.dst[edge];
+            if (!visited[neighbour]) {
+                levels[neighbour] = levels[vertex] + 1;
+                visited[neighbour] = true;
+                queue.push(neighbour);
             }
         }
     }
@@ -435,10 +451,10 @@ __global__ void bsf_push_vertex_centric_kernel(CSRGraph graph, int* levels, int*
         if (levels[vertex] == currLevel - 1) {
             // iterate over all the vertices at the current level
             for (unsigned int edge = graph.srcPtrs[vertex]; edge < graph.srcPtrs[vertex + 1]; edge++) {
-                unsigned int neigbour = graph.dst[edge];
+                unsigned int neighbour = graph.dst[edge];
                 // not yet visited
-                if (levels[neigbour] == -1) {
-                    levels[neigbour] = currLevel;
+                if (levels[neighbour] == -1) {
+                    levels[neighbour] = currLevel;
                     *newVertexVisitd = 1;  // set the flag to 1 so we know we need to run it again
                 }
             }
@@ -834,28 +850,28 @@ int main() {
     // Generate a scale-free graph with 1000 vertices and 3 edges per new vertex
     COOGraph scaleFreeCOO = generateScaleFreeGraphCOO(1000, 3);
     CSRGraph scaleFreeCSR = convertCOOtoCSR(scaleFreeCOO);
-    
+
     // Generate a small-world graph with 1000 vertices, 4 neighbors, 0.1 rewiring probability
     COOGraph smallWorldCOO = generateSmallWorldGraphCOO(1000, 4, 0.1);
     CSRGraph smallWorldCSR = convertCOOtoCSR(smallWorldCOO);
-    
+
     // Run BFS on both graph types
     printf("Running BFS on Scale-Free Graph:\n");
     int* seqScaleFree = bfs(scaleFreeCSR, 0);
     int* parScaleFree = bfsParallelEdgeCentric(scaleFreeCOO, 0);
     compareBFSResults(seqScaleFree, parScaleFree, scaleFreeCSR.numVertices, false);
-    
+
     printf("\nRunning BFS on Small-World Graph:\n");
     int* seqSmallWorld = bfs(smallWorldCSR, 0);
     int* parSmallWorld = bfsParallelEdgeCentric(smallWorldCOO, 0);
     compareBFSResults(seqSmallWorld, parSmallWorld, smallWorldCSR.numVertices, false);
-    
+
     // Clean up
     free(seqScaleFree);
     free(parScaleFree);
     free(seqSmallWorld);
     free(parSmallWorld);
-    
+
     // Free graph memory
     free(scaleFreeCOO.scr);
     free(scaleFreeCOO.dst);
@@ -863,13 +879,13 @@ int main() {
     free(scaleFreeCSR.srcPtrs);
     free(scaleFreeCSR.dst);
     free(scaleFreeCSR.values);
-    
+
     free(smallWorldCOO.scr);
     free(smallWorldCOO.dst);
     free(smallWorldCOO.values);
     free(smallWorldCSR.srcPtrs);
     free(smallWorldCSR.dst);
     free(smallWorldCSR.values);
-    
+
     return 0;
 }

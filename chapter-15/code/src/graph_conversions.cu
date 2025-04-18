@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../include/graph_structures.h"
+
 #include "../include/graph_conversions.h"
+#include "../include/graph_structures.h"
 
 CSRGraph convertCOOtoCSR(const COOGraph& cooGraph) {
     CSRGraph csrGraph;

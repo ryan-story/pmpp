@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <queue>
 #include <vector>
-#include "../include/graph_structures.h"
+
 #include "../include/bfs_sequential.h"
+#include "../include/graph_structures.h"
 
 // BFS returning a pointer to the list of levels for all vertices
 int* bfs(const CSRGraph& graph, int startingNode) {
@@ -26,11 +28,11 @@ int* bfs(const CSRGraph& graph, int startingNode) {
         queue.pop();
 
         for (int edge = graph.srcPtrs[vertex]; edge < graph.srcPtrs[vertex + 1]; edge++) {
-            int neigbour = graph.dst[edge];
-            if (!visited[neigbour]) {
-                levels[neigbour] = levels[vertex] + 1;
-                visited[neigbour] = true;
-                queue.push(neigbour);
+            int neighbour = graph.dst[edge];
+            if (!visited[neighbour]) {
+                levels[neighbour] = levels[vertex] + 1;
+                visited[neighbour] = true;
+                queue.push(neighbour);
             }
         }
     }

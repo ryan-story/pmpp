@@ -3,4 +3,4 @@
 
 bool compareBFSResults(int* sequentialLevels, int* parallelLevels, int numVertices, bool printDetails = false);
 
-#endif // UTILS_H
+#endif  // UTILS_H

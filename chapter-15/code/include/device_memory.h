@@ -2,6 +2,7 @@
 #define DEVICE_MEMORY_H
 
 #include <cuda_runtime.h>
+
 #include "graph_structures.h"
 
 // CSR Graph memory management
@@ -21,4 +22,4 @@ int* allocateAndInitLevelsOnDevice(int numVertices, int startingNode);
 int* copyLevelsToHost(int* deviceLevels, int numVertices);
 void freeLevelsOnDevice(int* deviceLevels);
 
-#endif // DEVICE_MEMORY_H
+#endif  // DEVICE_MEMORY_H
