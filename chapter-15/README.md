@@ -206,6 +206,90 @@ Two of them, but there is no vertices that are still not visited, hence no will 
 
 **Implement the host code for the direction-optimized BFS implementation described in Section 15.3**
 
+```cpp
+int* bfsDirectionOptimizedDevice(const CSRGraph& deviceCSRGraph, const CSCGraph& deviceCSCGraph, int startingNode, float alpha) {
+    // Initialize host levels array
+    int* hostLevels = (int*)malloc(sizeof(int) * deviceCSRGraph.numVertices);
+    for (int i = 0; i < deviceCSRGraph.numVertices; i++) {
+        hostLevels[i] = -1;
+    }
+    hostLevels[startingNode] = 0;
+
+    // Calculate size needed for vertex array
+    size_t vertexSize = sizeof(int) * deviceCSRGraph.numVertices;
+
+    // Allocate device memory for levels and flag
+    int *d_levels, *d_newVertexVisited;
+    cudaMalloc(&d_levels, vertexSize);
+    cudaMalloc(&d_newVertexVisited, sizeof(int));
+
+    // Copy initial levels to device
+    cudaMemcpy(d_levels, hostLevels, vertexSize, cudaMemcpyHostToDevice);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (deviceCSRGraph.numVertices + threadsPerBlock - 1) / threadsPerBlock;
+
+    int currLevel = 1;
+    int hostNewVertexVisited = 1;
+    
+    // Track visited vertices for determining when to switch
+    int totalVertices = deviceCSRGraph.numVertices;
+    int visitedVertices = 1; // Starting with just the root
+    bool usingPush = true; // Start with push strategy
+    
+    // we iterate over the levels as long as any vertex reports finding a new unvisited neighbour
+    while (hostNewVertexVisited != 0) {
+        hostNewVertexVisited = 0;
+        cudaMemcpy(d_newVertexVisited, &hostNewVertexVisited, sizeof(int), cudaMemcpyHostToDevice);
+
+        // Decide whether to use push or pull based on the fraction of vertices visited
+        float visitedFraction = (float)visitedVertices / totalVertices;
+        if (usingPush && visitedFraction > alpha) {
+            // Switch to pull strategy if we've visited more than alpha fraction of vertices
+            usingPush = false;
+        }
+        
+        if (usingPush) {
+            // Use push strategy
+            bsf_push_vertex_centric_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+                deviceCSRGraph, d_levels, d_newVertexVisited, currLevel);
+        } else {
+            // Use pull strategy
+            bsf_pull_vertex_centric_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+                deviceCSCGraph, d_levels, d_newVertexVisited, currLevel);
+        }
+
+        cudaDeviceSynchronize();
+        cudaMemcpy(&hostNewVertexVisited, d_newVertexVisited, sizeof(int), cudaMemcpyDeviceToHost);
+        
+        // If new vertices were visited, update our count
+        if (hostNewVertexVisited) {
+            // For simplicity, we'll count the visited vertices by copying back and checking
+            // In a more optimized implementation, we'd track this on the device
+            cudaMemcpy(hostLevels, d_levels, vertexSize, cudaMemcpyDeviceToHost);
+            int newVisitedCount = 0;
+            for (int i = 0; i < totalVertices; i++) {
+                if (hostLevels[i] != -1) {
+                    newVisitedCount++;
+                }
+            }
+            visitedVertices = newVisitedCount;
+        }
+        
+        currLevel++;
+    }
+
+    // Copy final results back to host
+    cudaMemcpy(hostLevels, d_levels, vertexSize, cudaMemcpyDeviceToHost);
+
+    // Free device memory
+    cudaFree(d_levels);
+    cudaFree(d_newVertexVisited);
+
+    return hostLevels;
+}
+```
+
 ### Exercise 3
 
 **Implement the single-block BFS kernel described in Section 15.7.**
