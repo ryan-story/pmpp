@@ -3,3 +3,4 @@ torchvision
 Ninja
 pre-commit
 gradio
+cython
