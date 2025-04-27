@@ -33,6 +33,41 @@ Max Pooling - Custom: 82.433ms, PyTorch: 9.454ms
 Avg Pooling - Custom: 47.322ms, PyTorch: 3.836ms
 ```
 
+### Conv2D backward
+
+```bash
+
+cd code/conv2d_backward
+
+python main.py
+```
+
+The output should be something like:
+
+```bash
+PyTorch gradient shape: (3, 28, 28)
+Our gradient shape: (3, 28, 28)
+Maximum absolute difference: 2.86102294921875e-06
+Average absolute difference: 3.000727701873984e-07
+Results match: True
+
+=== Running multiple tests with different configurations ===
+
+Testing with M=2, C=3, H_in=5, W_in=5, K=3
+Results match: True, Max difference: 9.5367431640625e-07
+
+Testing with M=4, C=3, H_in=10, W_in=10, K=3
+Results match: True, Max difference: 2.86102294921875e-06
+
+Testing with M=2, C=1, H_in=7, W_in=5, K=3
+Results match: True, Max difference: 9.5367431640625e-07
+
+Testing with M=3, C=2, H_in=8, W_in=8, K=5
+Results match: True, Max difference: 2.86102294921875e-06
+
+Testing with M=1, C=3, H_in=6, W_in=6, K=2
+Results match: True, Max difference: 4.76837158203125e-07
+```
 
 ## Exercises
 
@@ -81,24 +116,35 @@ void poolingLayer_forward(int M, int H, int W, int K, float* Y, float* S, const 
 
 **Implement the backward pass for the convolutional layer described in Section 16.2.**
 
+
+You can find the implementation in [conv_ops.c](./code/conv2d_backward/conv_ops.c). See 
+
+
 ```cpp
 void convLayer_backward_x_grad(int M, int C, int H_in, int W_in, int K,
-                             float* dE_dY, float* W, float* dE_dX) {
-   int H_out = H_in - K + 1;
-   int W_out = W_in - K + 1;
-   for(int c = 0; c < C; c++)
-       for(int h = 0; h < H_in; h++)
-           for(int w = 0; w < W_in; w++)
-               dE_dX[c, h, w] = 0;
-               
-   for(int m = 0; m < M; m++)
-       for(int h = 0; h < H-1; h++)
-           for(int w = 0; w < W-1; w++)
-               for(int c = 0; c < C; c++)
-                   for(int p = 0; p < K; p++)
-                       for(int q = 0; q < K; q++)
-                           if(h-p >= 0 && w-p >=0 && h-p < H_out && w-p < W_OUT)
-                               dE_dX[c, h, w] += dE_dY[m, h-p, w-p] * W[m, c, k-p, k-q];
+ float* dE_dY, float* W, float* dE_dX) {
+    int H_out = H_in - K + 1;
+    int W_out = W_in - K + 1;
+    
+    // Initialize dE_dX to zeros
+    for(int c = 0; c < C; c++)
+        for(int h = 0; h < H_in; h++)
+            for(int w = 0; w < W_in; w++)
+                dE_dX[c * H_in * W_in + h * W_in + w] = 0;
+    
+    // Compute gradients
+    for(int m = 0; m < M; m++)
+        for(int h_out = 0; h_out < H_out; h_out++)
+            for(int w_out = 0; w_out < W_out; w_out++)
+                for(int c = 0; c < C; c++)
+                    for(int p = 0; p < K; p++)
+                        for(int q = 0; q < K; q++) {
+                            int h_in = h_out + p;
+                            int w_in = w_out + q;
+                            dE_dX[c * H_in * W_in + h_in * W_in + w_in] += 
+                                dE_dY[m * H_out * W_out + h_out * W_out + w_out] * 
+                                W[m * C * K * K + c * K * K + p * K + q];
+                        }
 }
 ```
 
