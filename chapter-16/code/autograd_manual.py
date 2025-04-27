@@ -1,18 +1,44 @@
 import torch
+import math
+import random
+import numpy as np
 
-# Custom Linear Layer without autograd
-class Linear:
-    def __init__(self, in_features, out_features):
-        # Initialize weights and biases
-        self.weight = torch.randn(out_features, in_features) * 0.1  # Scale to avoid exploding gradients
+# Set seeds for reproducibility
+torch.manual_seed(42)
+random.seed(42)
+np.random.seed(42)
+
+# Base Layer class
+class Layer:
+    def forward(self, x):
+        raise NotImplementedError
+    
+    def backward(self, grad_output):
+        raise NotImplementedError
+    
+    def parameters(self):
+        return []
+    
+    def __call__(self, x):
+        return self.forward(x)
+
+# Linear Layer
+class Linear(Layer):
+    def __init__(self, in_features, out_features, name=None):
+        # Xavier/Glorot initialization
+        stdv = 1. / math.sqrt(in_features)
+        self.weight = torch.empty(out_features, in_features).uniform_(-stdv, stdv)
         self.bias = torch.zeros(out_features)
         
         # Initialize gradients
-        self.grad_weight = torch.zeros_like(self.weight)
-        self.grad_bias = torch.zeros_like(self.bias)
+        self.grad_weight = None
+        self.grad_bias = None
         
-        # Cache for backward pass
+        # Store input for backward pass
         self.input = None
+        
+        # Layer name for parameter identification
+        self.name = name or id(self)
     
     def forward(self, x):
         # Save input for backward pass
@@ -27,31 +53,34 @@ class Linear:
     
     def backward(self, grad_output):
         # Compute gradients for weights: dL/dW = (dL/dY)^T * X
-        self.grad_weight.add_(grad_output.t().matmul(self.input))
+        self.grad_weight = grad_output.t().matmul(self.input)
         
         # Compute gradients for bias: dL/db = sum(dL/dY)
-        self.grad_bias.add_(grad_output.sum(0))
+        self.grad_bias = grad_output.sum(0)
         
         # Compute gradient for input: dL/dX = dL/dY * W
         grad_input = grad_output.matmul(self.weight)
         
         return grad_input
     
-    def __call__(self, x):
-        return self.forward(x)
-    
     def parameters(self):
-        return [(self.weight, self.grad_weight), (self.bias, self.grad_bias)]
+        return [(self.weight, f"{self.name}_weight"), (self.bias, f"{self.name}_bias")]
+    
+    def get_gradients(self):
+        return [(self.grad_weight, f"{self.name}_weight"), (self.grad_bias, f"{self.name}_bias")]
 
-# Custom Sigmoid activation without autograd
-class Sigmoid:
+# Activation Functions
+class Sigmoid(Layer):
     def __init__(self):
-        # Cache for backward pass
         self.output = None
     
     def forward(self, x):
-        # Compute sigmoid and cache for backward pass
-        self.output = 1.0 / (1.0 + torch.exp(-x))
+        # Compute sigmoid with numerical stability
+        self.output = torch.zeros_like(x)
+        mask = x >= 0
+        self.output[mask] = 1 / (1 + torch.exp(-x[mask]))
+        exp_x = torch.exp(x[~mask])
+        self.output[~mask] = exp_x / (1 + exp_x)
         return self.output
     
     def backward(self, grad_output):
@@ -60,13 +89,32 @@ class Sigmoid:
         grad_input = grad_output * self.output * (1 - self.output)
         return grad_input
     
-    def __call__(self, x):
-        return self.forward(x)
+    def parameters(self):
+        return []
+    
+    def get_gradients(self):
+        return []
+
+class ReLU(Layer):
+    def __init__(self):
+        self.input = None
+    
+    def forward(self, x):
+        self.input = x
+        return torch.clamp(x, min=0)
+    
+    def backward(self, grad_output):
+        grad_input = grad_output.clone()
+        grad_input[self.input < 0] = 0
+        return grad_input
     
     def parameters(self):
-        return []  # Sigmoid has no parameters
+        return []
+    
+    def get_gradients(self):
+        return []
 
-# Simple MSE Loss
+# MSE Loss
 class MSELoss:
     def __init__(self):
         self.prediction = None
@@ -78,112 +126,167 @@ class MSELoss:
         return ((pred - target) ** 2).mean()
     
     def backward(self):
-        # For MSE, dL/dy = 2 * (y - t) / n
-        # where n is the number of elements
         batch_size = self.prediction.size(0)
         return 2.0 * (self.prediction - self.target) / batch_size
     
     def __call__(self, pred, target):
         return self.forward(pred, target)
 
-# Simple neural network using our custom layers
-class SimpleNetwork:
-    def __init__(self, input_size, hidden_size, output_size):
-        self.linear1 = Linear(input_size, hidden_size)
-        self.sigmoid = Sigmoid()
-        self.linear2 = Linear(hidden_size, output_size)
+# Sequential Model
+class Sequential:
+    def __init__(self, layers=None):
+        self.layers = layers if layers is not None else []
+    
+    def add(self, layer):
+        self.layers.append(layer)
     
     def forward(self, x):
-        # First layer
-        x1 = self.linear1(x)
-        
-        # Sigmoid activation
-        x2 = self.sigmoid(x1)
-        
-        # Second layer
-        output = self.linear2(x2)
-        
-        return output
+        for layer in self.layers:
+            x = layer(x)
+        return x
     
     def backward(self, grad_output):
-        # Backpropagation through the second linear layer
-        grad = self.linear2.backward(grad_output)
-        
-        # Backpropagation through the sigmoid layer
-        grad = self.sigmoid.backward(grad)
-        
-        # Backpropagation through the first linear layer
-        grad = self.linear1.backward(grad)
-        
-        return grad
+        for layer in reversed(self.layers):
+            grad_output = layer.backward(grad_output)
+        return grad_output
     
     def __call__(self, x):
         return self.forward(x)
     
     def parameters(self):
         params = []
-        params.extend(self.linear1.parameters())
-        params.extend(self.linear2.parameters())
+        for layer in self.layers:
+            params.extend(layer.parameters())
         return params
-
-# Simple SGD optimizer
-class SGD:
-    def __init__(self, parameters, learning_rate):
-        self.parameters = parameters
-        self.learning_rate = learning_rate
     
-    def zero_grad(self):
-        for param, grad in self.parameters:
-            grad.zero_()
+    def get_gradients(self):
+        grads = []
+        for layer in self.layers:
+            if hasattr(layer, 'get_gradients'):
+                grads.extend(layer.get_gradients())
+        return grads
+
+# SGD Optimizer - FIXED VERSION
+class SGD:
+    def __init__(self, model, learning_rate=0.01, momentum=0.9):
+        self.model = model
+        self.learning_rate = learning_rate
+        self.momentum = momentum
+        self.velocities = {}
+        
+        # Initialize velocities for each parameter
+        for param, name in model.parameters():
+            self.velocities[name] = torch.zeros_like(param)
     
     def step(self):
-        for param, grad in self.parameters:
-            param.sub_(self.learning_rate * grad)
-
-# Training function
-def train_model(model, criterion, optimizer, x_data, y_data, epochs=100):
-    for epoch in range(epochs):
-        # Zero gradients
-        optimizer.zero_grad()
+        # Get current gradients and parameters
+        gradients = {name: grad for grad, name in self.model.get_gradients()}
         
+        # Update parameters with their gradients
+        for param, param_name in self.model.parameters():
+            if param_name in gradients and gradients[param_name] is not None:
+                # Update velocity with momentum
+                self.velocities[param_name] = (self.momentum * self.velocities[param_name] + 
+                                              self.learning_rate * gradients[param_name])
+                
+                # Update parameter
+                param.sub_(self.velocities[param_name])
+    
+    def zero_grad(self):
+        # No need to zero gradients as they're recomputed each time
+        pass
+
+# Training function with debugging
+def train_model(model, criterion, optimizer, x_data, y_data, epochs=1000, debug=True):
+    losses = []
+    
+    for epoch in range(epochs):
         # Forward pass
         outputs = model(x_data)
         loss = criterion(outputs, y_data)
+        losses.append(loss.item())
         
         # Backward pass
         grad_output = criterion.backward()
         model.backward(grad_output)
         
+        # # Debug gradients
+        # if debug and epoch % 100 == 0:
+        #     gradients = model.get_gradients()
+        #     print(f"Epoch {epoch}, Loss: {loss.item()}")
+        #     if gradients:
+        #         for grad, name in gradients:
+        #             if grad is not None:
+        #                 grad_norm = torch.norm(grad).item()
+        #                 print(f"  Gradient norm ({name}): {grad_norm}")
+        
         # Update weights
         optimizer.step()
-        
-        if epoch % 10 == 0:
-            print(f'Epoch {epoch}, Loss: {loss.item()}')
     
-    return model
+    return model, losses
 
-# Create and train the model
+# Example usage with debugging
 def main():
-    # Generate some fake data
-    input_size = 10
-    hidden_size = 20
+    # Generate some simple data
+    input_size = 2
+    hidden_size = 4
     output_size = 1
     num_samples = 100
     
-    x = torch.randn(num_samples, input_size)
-    # Create a simple target function: y = sigmoid(sum(x))
-    true_w = torch.randn(input_size)
-    y = 1.0 / (1.0 + torch.exp(-x.matmul(true_w))).unsqueeze(1)
+    # Create XOR-like data
+    x = torch.tensor([
+        [0, 0],
+        [0, 1],
+        [1, 0],
+        [1, 1]
+    ], dtype=torch.float32)
     
-    # Initialize the model, loss, and optimizer
-    model = SimpleNetwork(input_size, hidden_size, output_size)
+    y = torch.tensor([
+        [0],
+        [1],
+        [1],
+        [0]
+    ], dtype=torch.float32)
+    
+    # Repeat data to create more samples
+    x = x.repeat(num_samples//4 + 1, 1)[:num_samples]
+    y = y.repeat(num_samples//4 + 1, 1)[:num_samples]
+    
+    # Add some noise to make it more realistic
+    x = x + torch.randn_like(x) * 0.05
+    
+    # Create a simple model with named layers
+    model = Sequential([
+        Linear(input_size, hidden_size, name="layer1"),
+        ReLU(),
+        Linear(hidden_size, hidden_size, name="layer2"),
+        ReLU(),
+        Linear(hidden_size, output_size, name="layer3"),
+        Sigmoid()
+    ])
+    
+    # Prepare loss function and optimizer
     criterion = MSELoss()
-    optimizer = SGD(model.parameters(), learning_rate=0.01)
+    optimizer = SGD(model, learning_rate=0.1, momentum=0.9)
     
-    # Train the model
-    trained_model = train_model(model, criterion, optimizer, x, y, epochs=100)
+    # Train the model with debugging
+    trained_model, losses = train_model(model, criterion, optimizer, x, y, epochs=1000)
     
-    print("Training complete!")
+    print("\nFinal predictions:")
+    test_inputs = torch.tensor([
+        [0, 0],
+        [0, 1],
+        [1, 0],
+        [1, 1]
+    ], dtype=torch.float32)
+    
+    predictions = model(test_inputs)
+    print("Input => Output (Expected)")
+    for i in range(4):
+        print(f"{test_inputs[i].tolist()} => {predictions[i].item():.4f} ({y[i].item()})")
+    
+    print("\nTraining complete!")
+    print(f"Final loss: {losses[-1]}")
 
 if __name__ == "__main__":
     main()
