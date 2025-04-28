@@ -1,6 +1,6 @@
-from setuptools import setup, Extension
-from Cython.Build import cythonize
 import numpy as np
+from Cython.Build import cythonize
+from setuptools import Extension, setup
 
 extensions = [
     Extension(
@@ -8,10 +8,8 @@ extensions = [
         sources=["conv_wrapper.pyx", "conv_ops.c"],  # Include both source files
         include_dirs=[np.get_include()],
         extra_compile_args=["-O3"],
-        language="c"
+        language="c",
     )
 ]
 
-setup(
-    ext_modules=cythonize(extensions)
-)
+setup(ext_modules=cythonize(extensions))

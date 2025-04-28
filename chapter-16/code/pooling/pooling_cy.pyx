@@ -1,6 +1,8 @@
 # pooling_cy.pyx - Cython interface to our C pooling function
 import numpy as np
+
 cimport numpy as np
+
 np.import_array()  # Initialize NumPy C API
 
 # Declare the C function

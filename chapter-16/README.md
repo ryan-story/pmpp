@@ -219,7 +219,7 @@ t: (c * H * W) + ((h_out + p) * W) + (w_out + q)
 t+1: = (c * H * W) + ((h_out + p) * W) + (w_out + q + 1)
 ```
 
-The difference is exacly 1 so we get a perfectly coaleased memory access.
+The difference is exactly 1 so we get a perfectly coaleased memory access.
 
 **When w_out wraps and h_out increases:**
 
@@ -240,7 +240,7 @@ Since `W_out = W - K + 1`
 So the memory addresses differ by K elements, which is typically a small number (filter size). If K is small (e.g. 3 or 5), some coalescing benefit might still be achieved, but it's not ideal.
 
 
-#### Case 2 - `c` changes - differenct channels
+#### Case 2 - `c` changes - different channels
 
 The memory access for `t+1` changes by approximately `H x W` (an entire channel), which is typically a lot, so there will be no coalescing.
 

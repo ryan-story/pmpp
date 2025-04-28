@@ -1,9 +1,9 @@
 import ctypes
-from ctypes import c_int, c_float, POINTER
+from ctypes import POINTER, c_float, c_int
 
 # Load the cuDNN wrapper library
 try:
-    conv2dcuda_lib = ctypes.CDLL('./lib/conv2dcuda_wrapper.so')
+    conv2dcuda_lib = ctypes.CDLL("./lib/conv2dcuda_wrapper.so")
     print("Successfully loaded conv2dcuda wrapper library")
 except Exception as e:
     print(f"Error loading conv2dcuda library: {e}")
@@ -29,7 +29,7 @@ conv2dcuda_lib.conv2d_forward.argtypes = [
     c_int,  # pad_h
     c_int,  # pad_w
     c_int,  # stride_h
-    c_int   # stride_w
+    c_int,  # stride_w
 ]
 conv2dcuda_lib.conv2d_forward.restype = c_int
 
@@ -51,7 +51,7 @@ conv2dcuda_lib.conv2d_backward.argtypes = [
     c_int,  # pad_h
     c_int,  # pad_w
     c_int,  # stride_h
-    c_int   # stride_w
+    c_int,  # stride_w
 ]
 conv2dcuda_lib.conv2d_backward.restype = c_int
 
@@ -59,7 +59,7 @@ conv2dcuda_lib.conv2d_backward.restype = c_int
 conv2dcuda_lib.maxpool2d_forward.argtypes = [
     POINTER(c_float),  # input
     POINTER(c_float),  # output
-    POINTER(c_int),    # indices
+    POINTER(c_int),  # indices
     c_int,  # batch_size
     c_int,  # channels
     c_int,  # height
@@ -67,7 +67,7 @@ conv2dcuda_lib.maxpool2d_forward.argtypes = [
     c_int,  # kernel_h
     c_int,  # kernel_w
     c_int,  # stride_h
-    c_int   # stride_w
+    c_int,  # stride_w
 ]
 conv2dcuda_lib.maxpool2d_forward.restype = c_int
 
@@ -75,7 +75,7 @@ conv2dcuda_lib.maxpool2d_forward.restype = c_int
 conv2dcuda_lib.maxpool2d_backward.argtypes = [
     POINTER(c_float),  # input
     POINTER(c_float),  # d_output
-    POINTER(c_int),    # indices
+    POINTER(c_int),  # indices
     POINTER(c_float),  # d_input
     c_int,  # batch_size
     c_int,  # channels
@@ -84,7 +84,7 @@ conv2dcuda_lib.maxpool2d_backward.argtypes = [
     c_int,  # kernel_h
     c_int,  # kernel_w
     c_int,  # stride_h
-    c_int   # stride_w
+    c_int,  # stride_w
 ]
 conv2dcuda_lib.maxpool2d_backward.restype = c_int
 
@@ -92,6 +92,7 @@ conv2dcuda_lib.maxpool2d_backward.restype = c_int
 result_cudnn = conv2dcuda_lib.init_cudnn()
 if result_cudnn != 0:
     raise Exception("Failed to initialize cuDNN")
+
 
 def cleanup_cudnn():
     """Clean up cuDNN resources"""

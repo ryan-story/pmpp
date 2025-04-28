@@ -2,7 +2,9 @@
 # distutils: language=c
 
 import numpy as np
+
 cimport numpy as np
+
 np.import_array()  # Initialize NumPy C API
 
 cdef extern:
