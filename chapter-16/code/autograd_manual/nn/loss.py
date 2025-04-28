@@ -49,3 +49,21 @@ class CrossEntropyLoss:
     
     def __call__(self, pred, target):
         return self.forward(pred, target)
+
+
+class MSELoss:
+    def __init__(self):
+        self.prediction = None
+        self.target = None
+    
+    def forward(self, pred, target):
+        self.prediction = pred
+        self.target = target
+        return np.mean((pred - target) ** 2)
+    
+    def backward(self):
+        batch_size = self.prediction.shape[0]
+        return 2.0 * (self.prediction - self.target) / batch_size
+    
+    def __call__(self, pred, target):
+        return self.forward(pred, target)

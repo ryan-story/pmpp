@@ -3,6 +3,7 @@ import random
 import torch
 
 from examples.mnist_example import mnist_cnn_example
+from examples.xor_example import xor_example
 from cuda_wrappers.cublas_wrapper import cleanup_cublas
 from cuda_wrappers.cudnn_wrapper import cleanup_cudnn
 
@@ -13,9 +14,10 @@ torch.manual_seed(42)
 
 def main():
     try:
-        print("Running MNIST CNN example with CUDA acceleration...")
-        mnist_model = mnist_cnn_example()
-        print("MNIST CNN example completed successfully")
+        # print("Running MNIST CNN example with CUDA acceleration...")
+        # mnist_cnn_example()
+        # print("MNIST CNN example completed successfully")
+        xor_example()
     
     finally:
         # Clean up cuBLAS and cuDNN resources

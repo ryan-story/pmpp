@@ -36,3 +36,30 @@ class Adam:
                 
                 # Update parameter
                 param -= self.learning_rate * m_corrected / (np.sqrt(v_corrected) + self.epsilon)
+
+
+class SGD:
+    def __init__(self, model, learning_rate=0.01, momentum=0.9):
+        self.model = model
+        self.learning_rate = learning_rate
+        self.momentum = momentum
+        self.velocities = {}
+        
+        # Initialize velocities for each parameter
+        for param, name in model.parameters():
+            self.velocities[name] = np.zeros_like(param)
+    
+    def step(self):
+        # Get current gradients and parameters
+        gradients = {name: grad for grad, name in self.model.get_gradients()}
+        
+        # Update parameters with their gradients
+        for param, param_name in self.model.parameters():
+            if param_name in gradients and gradients[param_name] is not None:
+                # Update velocity with momentum
+                self.velocities[param_name] = (self.momentum * self.velocities[param_name] + 
+                                             self.learning_rate * gradients[param_name])
+                
+                # Update parameter
+                param -= self.velocities[param_name]
+                
