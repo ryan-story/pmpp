@@ -9,7 +9,6 @@ def softmax(x):
     return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
 
-# Cross-Entropy Loss for MNIST
 class CrossEntropyLoss:
     def __init__(self):
         self.prediction = None

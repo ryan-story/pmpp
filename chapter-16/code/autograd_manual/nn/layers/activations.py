@@ -57,6 +57,9 @@ class ReLU(Layer):
         return np.maximum(0, x)
 
     def backward(self, grad_output):
+        # dL/dx = dL/doutput * d(output)/dx
+        # For ReLU: d(ReLU(x))/dx = 1 if x > 0, 0 if x <= 0
+        # So: dL/dx = dL/doutput when x > 0, and 0 when x <= 0
         grad_input = grad_output.copy()
         grad_input[self.input < 0] = 0
         return grad_input

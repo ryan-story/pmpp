@@ -7,7 +7,6 @@ from nn.layers.base import Layer
 from utils.conversion import np_to_c_float_p
 
 
-# Conv2D Layer with direct cuDNN
 class Conv2D(Layer):
     def __init__(
         self, in_channels, out_channels, kernel_size, stride=1, padding=0, name=None

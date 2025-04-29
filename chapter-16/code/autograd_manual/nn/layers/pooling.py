@@ -6,7 +6,6 @@ from nn.layers.base import Layer
 from utils.conversion import np_to_c_float_p, np_to_c_int_p
 
 
-# MaxPooling2D Layer with direct cuDNN
 class MaxPooling2D(Layer):
     def __init__(self, kernel_size, stride=None, name=None):
         # Convert kernel_size to tuple if it's an integer

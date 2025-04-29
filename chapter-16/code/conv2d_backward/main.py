@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 subprocess.check_call([sys.executable, "setup.py", "build_ext", "--inplace"])
-import conv_wrapper
+import conv_wrapper  # noqa: E402
 
 
 def compare_with_pytorch():

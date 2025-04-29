@@ -2,7 +2,175 @@
 
 ## Code
 
+"For learning purposes, we implement several techniques described in the chapter. Specifically, we implement the sequential implementations of backward pass and pooling, and more importantly, we implement a minimal version of an autograd system. 
+
+### Autograd - manual implementation
+
+The most interesting component we implement as part of this chapter is, for sure, the manual implementation of the auto-grad engine. 
+
+Following the subchapters `Training models` and `Convolutional neural network backpropagation` we implement the forward and backward passes for the `Linear`, `Conv2D` and `MaxPooling2D` layers. All of the layers implement the following interface:
+
+```py
+class Layer:
+    def forward(self, x):
+        raise NotImplementedError
+
+    def backward(self, grad_output):
+        raise NotImplementedError
+
+    def parameters(self):
+        return []
+
+    def __call__(self, x):
+        return self.forward(x)
+```
+
+For each layer, we implement a backward pass function that, given the output gradient,
+- calculates the gradients for all of the parameters
+- calculates the gradient for the input and returns it so it can be consumed by the previous layer
+
+For forward and backward passes, we wrap the CUDA code, cuBLAS matmul for the linear layer, and a custom Conv2d forward for the `Conv2D` and `MaxPooling2D` layers. 
+
+
+We implement two simple training examples:
+
+- [xor](./code/autograd_manual/examples/xor_example.py): training a simple 2-layer neural network on the xor problem
+- [mnist](./code/autograd_manual/examples/mnist_example.py): training a simple CNN on MNIST achieving ~98% accuracy in 3 epochs
+
+You can run either of these just by running `main.py` with `--xor` or `--mnist` flag. We don't use any PyTorch training code to show how Autograd works under the hood. It is pretty neat how little is needed to implement a backprop and to train decent image classification models. 
+
+In order to be able to run the code you will need to compile our forward and backward passes. To do so run the [Makefile](./code/autograd_manual/Makefile).
+
+```bash
+cd code/autograd_manual
+
+make
+```
+
+#### XOR
+
+```bash
+python main.py --xor
+
+Successfully loaded cuBLAS wrapper library
+cuBLAS initialized successfully
+Successfully loaded conv2dcuda wrapper library
+Using CUDA kernel implementation (no cuDNN)
+Running XOR example with CUDA acceleration...
+Starting training...
+Epoch [100/1000], Loss: 0.000844
+Epoch [200/1000], Loss: 0.000272
+Epoch [300/1000], Loss: 0.000154
+Epoch [400/1000], Loss: 0.000110
+Epoch [500/1000], Loss: 0.000078
+Epoch [600/1000], Loss: 0.000075
+Epoch [700/1000], Loss: 0.000046
+Epoch [800/1000], Loss: 0.000043
+Epoch [900/1000], Loss: 0.000035
+Epoch [1000/1000], Loss: 0.000033
+
+Final predictions:
+Input => Output (Expected)
+[0.0, 0.0] => 0.0047 (0.0)
+[0.0, 1.0] => 0.9951 (1.0)
+[1.0, 0.0] => 0.9951 (1.0)
+[1.0, 1.0] => 0.0026 (0.0)
+
+Training complete!
+Final loss: 3.339664181112312e-05
+XOR example completed successfully
+cuBLAS cleaned up successfully
+Cleaning up CUDA kernel implementation (no cuDNN)
+Cleaned up cuBLAS and cuDNN resources
+```
+
+
+
+#### MNIST
+
+```bash
+python main.py --mnist
+
+Successfully loaded cuBLAS wrapper library
+cuBLAS initialized successfully
+Successfully loaded conv2dcuda wrapper library
+Using CUDA kernel implementation (no cuDNN)
+Running MNIST CNN example with CUDA acceleration...
+Loading MNIST data using torchvision...
+Loaded 60000 training samples and 10000 test samples
+Starting training...
+Epoch [1/3], Step [187/938], Loss: 0.5718, Accuracy: 83.53%
+Epoch [1/3], Step [374/938], Loss: 0.3654, Accuracy: 89.40%
+Epoch [1/3], Step [561/938], Loss: 0.2840, Accuracy: 91.70%
+Epoch [1/3], Step [748/938], Loss: 0.2352, Accuracy: 93.08%
+Epoch [1/3], Step [935/938], Loss: 0.2039, Accuracy: 93.97%
+Epoch [1/3] completed, Loss: 0.2034, Accuracy: 93.98%
+Epoch [2/3], Step [187/938], Loss: 0.0632, Accuracy: 98.02%
+Epoch [2/3], Step [374/938], Loss: 0.0628, Accuracy: 98.03%
+Epoch [2/3], Step [561/938], Loss: 0.0580, Accuracy: 98.16%
+Epoch [2/3], Step [748/938], Loss: 0.0568, Accuracy: 98.24%
+Epoch [2/3], Step [935/938], Loss: 0.0569, Accuracy: 98.24%
+Epoch [2/3] completed, Loss: 0.0569, Accuracy: 98.24%
+Epoch [3/3], Step [187/938], Loss: 0.0419, Accuracy: 98.65%
+Epoch [3/3], Step [374/938], Loss: 0.0401, Accuracy: 98.68%
+Epoch [3/3], Step [561/938], Loss: 0.0387, Accuracy: 98.74%
+Epoch [3/3], Step [748/938], Loss: 0.0383, Accuracy: 98.74%
+Epoch [3/3], Step [935/938], Loss: 0.0383, Accuracy: 98.76%
+Epoch [3/3] completed, Loss: 0.0382, Accuracy: 98.76%
+
+Testing the model...
+Test Accuracy: 98.74%
+
+Showing some example predictions...
+MNIST CNN example completed successfully
+cuBLAS cleaned up successfully
+Cleaning up CUDA kernel implementation (no cuDNN)
+Cleaned up cuBLAS and cuDNN resources
+```
+
+![alt text](code/mnist_predictions.png)
+
+
+### Autograd (leveraging torch)
+
+We also implement a minimal version of this leveraging the `torch` autograd. We show what a minimal interface a class needs to implement for it to be possible to be used with torch autograd.
+
+```py
+class LinearFunction(Function):
+    @staticmethod
+    def forward(ctx, input, weight, bias=None):
+        ctx.save_for_backward(input, weight, bias)
+        output = input.matmul(weight.t())
+        if bias is not None:
+            output += bias.unsqueeze(0).expand_as(output)
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, weight, bias = ctx.saved_tensors
+        grad_input = grad_weight = grad_bias = None
+        
+        if ctx.needs_input_grad[0]:
+            # dL/dx = dL/doutput * d(output)/dx = dL/doutput * W 
+            grad_input = grad_output.matmul(weight)
+            
+        if ctx.needs_input_grad[1]:
+            # dL/dW = dL/doutput * d(output)/dW = X^T * dL/doutput
+            grad_weight = grad_output.t().matmul(input)
+            
+        if bias is not None and ctx.needs_input_grad[2]:
+            # dL/db = sum(dL/doutput)
+            # Sum over batch dimension since bias is added to each sample
+            grad_bias = grad_output.sum(0)
+            
+        return grad_input, grad_weight, grad_bias
+```
+
+We implement the above to provide a better intuition into how Torch works under the hood (the backward method is crucial).
+
 ### Pooling
+
+For exercise 1, we implement the sequential pooling layer:
 
 ```bash
 cd code/pooling
@@ -34,6 +202,8 @@ Avg Pooling - Custom: 47.322ms, PyTorch: 3.836ms
 ```
 
 ### Conv2D backward
+
+For exercise 4, we implement the sequential conv2d backward, and we verify its performance with torch implementation.
 
 ```bash
 
@@ -116,9 +286,7 @@ void poolingLayer_forward(int M, int H, int W, int K, float* Y, float* S, const 
 
 **Implement the backward pass for the convolutional layer described in Section 16.2.**
 
-
 You can find the implementation in [conv_ops.c](./code/conv2d_backward/conv_ops.c). See 
-
 
 ```cpp
 void convLayer_backward_x_grad(int M, int C, int H_in, int W_in, int K,
@@ -183,7 +351,7 @@ unroll_Kernel(int C, int H, int W, int K, float* X, float* X_unroll) {
 }
 ```
 
-Let' start by linearlizing the memory read operation. For `X_unroll` we apply a standard row major order so it becomes:
+Let's start by linearizing the memory read operation. For `X_unroll` we apply a standard row-major order so it becomes:
 
 ```
 X_unroll[h_unroll][w_unroll] = X_unroll[(h_unroll * W_unroll) + w_unroll]
@@ -202,7 +370,7 @@ In the kernel `t` is used to calculate:
 - `h_out = w_unroll / W_out`
 - `w_out = w_unroll % W_out`
 
-When `t` increases by 1 (as in the neighbouring kernels) The following happens:
+When `t` increases by 1 (as in the neighboring kernels), the following happens:
 
 #### Case 1 - `c` doesn't change
 
@@ -219,7 +387,7 @@ t: (c * H * W) + ((h_out + p) * W) + (w_out + q)
 t+1: = (c * H * W) + ((h_out + p) * W) + (w_out + q + 1)
 ```
 
-The difference is exactly 1 so we get a perfectly coaleased memory access.
+The difference is exactly 1, so we get a perfectly coalesced memory access.
 
 **When w_out wraps and h_out increases:**
 
@@ -237,7 +405,7 @@ The difference is:
 
 Since `W_out = W - K + 1`
 
-So the memory addresses differ by K elements, which is typically a small number (filter size). If K is small (e.g. 3 or 5), some coalescing benefit might still be achieved, but it's not ideal.
+So the memory addresses differ by `K` elements, which is typically a small number (filter size). If `K` is small (e.g., `3` or `5`), some coalescing benefit might still be achieved, but it's not ideal.
 
 
 #### Case 2 - `c` changes - different channels
@@ -247,22 +415,23 @@ The memory access for `t+1` changes by approximately `H x W` (an entire channel)
 
 #### In general 3 cases:
 
-1. **Same channel, same row (perfect coalescing):** When adjacent threads access elements with the same `h_out` but consecutive `w_out` values.
+1. Same channel, same row (perfect coalescing): When adjacent threads access elements with the same `h_out` but consecutive `w_out` values.
 
-2. **Same channel, row boundary (partial coalescing):** When threads move from the end of one row to the beginning of the next row (`w_out` wraps, `h_out` increments) - the stride is `K` which might allow some coalescing if `K` is small and aligned.
+2. Same channel, row boundary (partial coalescing): When threads move from the end of one row to the beginning of the next row (`w_out` wraps, `h_out` increments), the stride is `K`, which might allow some coalescing if `K` is small and aligned.
 
-3. **Channel boundary (no coalescing):** When threads move between different channels - the stride is very large.
+3. Channel boundary (no coalescing): When threads move between different channels, the stride is very large.
 
-For a typical CNN used in image processing it should work really really well. 
+For a typical CNN used in image processing, it should work really, really well. 
 
-1. **Same channel, same row (perfect coalescing):** This happens for consecutive threads processing adjacent output pixels in the same row. For each row, we have `W_out` consecutive positions (`W_out = W-K+1`). For a `224×224` image with `3×3` filters, `W_out = 222`. This means `222` consecutive threads will have perfect coalescing per row.
 
-2. **Same channel, row boundary (partial coalescing):** This happens once per row, with a stride of `K` (typically `3` or `5`). For a `224×224` image, this happens `223` times per channel (once per row transition).
+1. Same channel, same row (perfect coalescing): This happens for consecutive threads processing adjacent output pixels in the same row. For each row, we have `W_out` consecutive positions (`W_out = W-K+1`). For an `224×224` image with `3×3` filters, `W_out = 222`. This means `222` consecutive threads will have perfect coalescing per row.
 
-3. **Channel boundary (no coalescing):** This happens once every `W_unroll` threads, where `W_unroll = H_out * W_out`. For a `224×224` image with `3×3` filters, `W_unroll = 222 * 222 ≈ 49,284`, so this happens much less frequently.
+2. Same channel, row boundary (partial coalescing): This happens once per row, with a stride of `K` (typically `3` or `5`). For an `224×224` image, this happens `223` times per channel (once per row transition).
 
-- Perfect coalescing: Approximately 222 * 224 = 49,728 threads per channel
-- Partial coalescing: Approximately 223 threads per channel
+3. Channel boundary (no coalescing): This happens once every `W_unroll` threads, where `W_unroll = H_out × W_out`. For a `224×224` image with `3×3` filters, `W_unroll = 222 × 222 ≈ 49,284`, so this happens much less frequently (`1/49284`).
+
+- Perfect coalescing: Approximately `222 * 224` = `49,728` threads per channel
+- Partial coalescing: Approximately `223` threads per channel
 - No coalescing: Occurs once per channel
 
-The vast majority of memory accesses (>99%) will fall into the perfect coalescing category when processing typical image sizes
+The vast majority of memory accesses (`>99%`) will fall into the perfect coalescing category when processing typical image sizes. 

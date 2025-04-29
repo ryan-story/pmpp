@@ -5,7 +5,6 @@ from cuda_wrappers.cublas_wrapper import cublas_matmul
 from nn.layers.base import Layer
 
 
-# Linear Layer with direct cuBLAS
 class Linear(Layer):
     def __init__(self, in_features, out_features, name=None):
         # Xavier/Glorot initialization

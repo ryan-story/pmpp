@@ -1,7 +1,6 @@
 import numpy as np
 
 
-# Adam Optimizer
 class Adam:
     def __init__(
         self, model, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8
