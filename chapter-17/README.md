@@ -44,10 +44,10 @@
 
 **a. List the execution order of these parts from different iterations of the outer loop before fission.**
 
-In the original loop, for each iteration of the outer lopp (m from 0 to M-1), the execution happens in the following order:
+In the original loop, for each iteration of the outer loop (`m` from `0` to `M-1`), the execution happens in the following order:
 1. First part (statements before inner loop):
-- Calculate rMu[m] (line 02)
-- Calculate iMu[m] (line 03)
+- Calculate `rMu[m]` (line `02`)
+- Calculate `iMu[m]` (line `03`)
 
 2. Second part (inner loop):
 - For each n from 0 to N-1:
@@ -88,19 +88,19 @@ c. `m=2`
 
 ...and so on until m=M-1
 
-Overall the big change is that all of the `rMu/iMu` values are already pre-computed when we execute the inner loop. 
+Overall, the big change is that all of the `rMu/iMu` values are already pre-computed when we execute the inner loop. 
 
 **c. Determine whether the execution results in parts (a) and (b) of this exercise will be identical. The execution results are identical if all data required by a part are properly generated and preserved for its consumption before that part executes and the execution result of the part is not overwritten by other parts that should come after the part in the original execution order.**
 
-To answer this question we need to analyze two aspects: 
-1. Are all data required by the inner loop are properly generated and preserved before the inner loop execution starts?
-2. Are the results of the inner loop not overwritten in the inner looop. 
+To answer this question, we need to analyze two aspects: 
+1. Are all data required by the inner loop properly generated and preserved before the inner loop execution starts?
+2. Are the results of the inner loop not overwritten in the inner loop? 
 
 Let's try to answer this:
-- 1: To calculate the second part of the fission code (lines `05-12`) we require the values of `rMu[m]` and `iMu[m]` to be already pre-calculated. This happens in the first part of the fission cde (lines `01-04`). So the first **requirement is satisfied**
-- 2: We don't overwrite values fo `rMu` and `iMu anywhere. The only override is (+=) on rFhD[n] and iFhD[n] in lines 10-11 and it happens in exactly the same order as in the orignal code, so **this requirement is satisfied as well.**
+- 1: To calculate the second part of the fission code (lines `05-12`), we require the values of `rMu[m]` and `iMu[m]` to be already pre-calculated. This happens in the first part of the fission code (lines `01-04`). So the first **requirement is satisfied**.
+- 2: We don't overwrite values for `rMu` and `iMu anywhere. The only override is `(+=)` on `rFhD[n]` and `iFhD[n]` in lines `10-11` and it happens in exactly the same order as in the original code, so **this requirement is satisfied as well.**
 
-Hence we can determine that yes the result of `a and b part of this exericse will be identical`.
+Hence, we can determine that yes, the result of `a and b part of this exericse will be identical`.
 
 ### Exercise 2
 
@@ -129,23 +129,16 @@ for (int n = 0; n < N; n++) {
 }
 ```
 
-- (m=0, n=0)
-- (m=0, n=1)
-- (m=0, n=2)
+- (n=0, m=0)
+- (n=0, m=1)
+- (n=0, m=2)
 - ...
--  N-1: (m=0, n=N-1)
-- N: (m=1, n=0)
-- N+1: (m=1, n=1)
+- (n=0, m=M-1)
+- (n=1, m=0)
+- (n=1, m=1)
 - ...
-- N+N-1: (m=1, n=N-1)
-- ...
-- (M-1)x N: (m=M-1, n=0)
-- (M-1)x N + 1: (m=M-1, n=1)
-- ...
-- (M-1)x N + N-1: (m=M-1, n=N-1)
 
-The pattern here is that we first execute all iterations for n (from 0 to N-1) while keeping m=0, then increment m and repeat all iterations of n again. The total number of iterations is M×N, with the n-loop completing M times.
-
+We execute all iterations for `m` (from `0` to `M-1`) while keeping `n=0`, then increment `n` and repeat all iterations of `m` again. The total number of iterations is still `M×N`, name the m-loop completes `N` times.
 
 **b. List the execution order of the loop body from different iterations after loop interchange. Identify these iterations with the values of m and n.**
 
@@ -157,31 +150,25 @@ for (int m = 0; m < M; m++) {
 }
 ```
 
-- (n=0, m=0)
-- (n=0, m=1)
-- (n=0, m=2)
+- (m=0, n=0)
+- (m=0, n=1)
+- (m=0, n=2)
 - ...
-- (n=0, m=M-1)
-- (n=1, m=0)
-- (n=1, m=1)
+- (m=0, n=N-1)
+- (m=1, n=0)
+- (m=1, n=1)
 - ...
-- (n=1, m=M-1)
-- ...
-- (n=N-1, m=0)
-- (n=N-1, m=1)
-- ...
-- (n=N-1, m=M-1)
 
-Now we execute all iterations for m (from 0 to M-1) while keeping n=0, then increment n and repeat all iterations of m again. The total number of iterations is still M×N, but now the m-loop completes N times.
+The pattern here is that we first execute all iterations for `n` (from `0` to `N-1`) while keeping `m=0`, then increment `m` and repeat all iterations of `n` again. The total number of iterations is `M×N`, with the n-loop completing `M` times.
 
 
 **c. Determine whether the execution results in parts (a) and (b) of this exercise will be identical. The execution results are identical if all data required by a part are properly generated and preserved for its consumption before that part executes and the execution result of the part is not overwritten by other parts that should come after the part in the original execution order.**
 
-To answer this question we need to analyze two aspects: 
+To answer this question, we need to analyze two aspects: 
 1. Are all data in both cases properly generated and preserved before the inner loop execution starts?
-2. Are the results of the inner loop not overwritten in the inner looop. 
+2. Are the results of the inner loop not overwritten in the inner loop?
 
-1. The variables `expFhD`, `cArg`, and `sArg` are local to each iteration and don't carry values between iterations, so we can assume the first criterium is satisfied. 
+1. The variables `expFhD`, `cArg`, and `sArg` are local to each iteration and don't carry values between iterations, so we can assume the first criterion is satisfied. 
 
 2. The key operations affecting program state are: 
 
@@ -234,6 +221,7 @@ This difference in indexing patterns is significant because:
    for (int m = 0; m < M; m++) {
    ```
 
-It doesn't make sense to load `kx[n]` into a register because, kernel never uses `kx[n]` - it only ever accesses `kx[m]` where `m` iterates from 0 to M-1. 
+It doesn't make sense to load `kx[n]` into a register because the kernel never uses `kx[n]` - it only ever accesses `kx[m]` where `m` iterates from 0 to M-1. 
 
-Assuming that the question is wrong and they mean "it does not make sense to try to load *kx[m]*" the answer is that we access `M` values of `kx[m]`, for every of `N/FHD_THREADS_PER_BLOCK` threads we are executing, it is not a value that could be shared accross the loop.
+Assuming that the question is wrong and they mean "it does not make sense to try to load *kx[m]*" the answer is that we access `M` values of `kx[m]`, for every one of `N/FHD_THREADS_PER_BLOCK` threads we are executing; it is not a value that could be shared across the loop.
+

@@ -73,8 +73,8 @@ extern "C" int conv2d_forward(float* input, float* weights, float* bias, float* 
     // Choose algorithm - using modern method with heuristics
     cudnnConvolutionFwdAlgoPerf_t perf;
     int returned_algo_count;
-    CHECK_CUDNN(cudnnFindConvolutionForwardAlgorithm(
-        cudnnHandle, in_desc, fil_desc, conv_desc, out_desc, 1, &returned_algo_count, &perf));
+    CHECK_CUDNN(cudnnFindConvolutionForwardAlgorithm(cudnnHandle, in_desc, fil_desc, conv_desc, out_desc, 1,
+                                                     &returned_algo_count, &perf));
     cudnnConvolutionFwdAlgo_t algo = perf.algo;
 
     // Workspace
@@ -154,14 +154,14 @@ extern "C" int conv2d_backward(float* input, float* weights, float* d_output, fl
     cudnnSetTensor4dDescriptor(bias_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, out_channels, 1, 1);
 
     float alpha = 1.0f, beta = 0.0f;
-    
+
     // Backward Data - using newer algorithm selection method
     cudnnConvolutionBwdDataAlgoPerf_t bwd_data_perf;
     int returned_bwd_data_algo_count;
-    CHECK_CUDNN(cudnnFindConvolutionBackwardDataAlgorithm(
-        cudnnHandle, fil_desc, out_desc, conv_desc, in_desc, 1, &returned_bwd_data_algo_count, &bwd_data_perf));
+    CHECK_CUDNN(cudnnFindConvolutionBackwardDataAlgorithm(cudnnHandle, fil_desc, out_desc, conv_desc, in_desc, 1,
+                                                          &returned_bwd_data_algo_count, &bwd_data_perf));
     cudnnConvolutionBwdDataAlgo_t bwd_data_algo = bwd_data_perf.algo;
-    
+
     size_t ws_data_size = 0;
     CHECK_CUDNN(cudnnGetConvolutionBackwardDataWorkspaceSize(cudnnHandle, fil_desc, out_desc, conv_desc, in_desc,
                                                              bwd_data_algo, &ws_data_size));
@@ -173,10 +173,10 @@ extern "C" int conv2d_backward(float* input, float* weights, float* d_output, fl
     // Backward Filter - using newer algorithm selection method
     cudnnConvolutionBwdFilterAlgoPerf_t bwd_fil_perf;
     int returned_bwd_fil_algo_count;
-    CHECK_CUDNN(cudnnFindConvolutionBackwardFilterAlgorithm(
-        cudnnHandle, in_desc, out_desc, conv_desc, fil_desc, 1, &returned_bwd_fil_algo_count, &bwd_fil_perf));
+    CHECK_CUDNN(cudnnFindConvolutionBackwardFilterAlgorithm(cudnnHandle, in_desc, out_desc, conv_desc, fil_desc, 1,
+                                                            &returned_bwd_fil_algo_count, &bwd_fil_perf));
     cudnnConvolutionBwdFilterAlgo_t bwd_fil_algo = bwd_fil_perf.algo;
-    
+
     size_t ws_fil_size = 0;
     CHECK_CUDNN(cudnnGetConvolutionBackwardFilterWorkspaceSize(cudnnHandle, in_desc, out_desc, conv_desc, fil_desc,
                                                                bwd_fil_algo, &ws_fil_size));
