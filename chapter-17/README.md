@@ -198,7 +198,42 @@ These operations accumulate values into `rFhD[n]` and `iFhD[n]` using `+=`. Sinc
 
 **In Fig. 17.11, identify the difference between the access to x[] and kx[] in the nature of indices used. Use the difference to explain why it does not make sense to try to load kx[n] into a register for the kernel shown in Fig. 17.11**
 
+```cpp
+01  #define FHD_THREADS_PER_BLOCK 1024
+02  __global__ void cmpFhD(float* rPhi, iPhi, phiMag,
+                         kx, ky, kz, x, y, z, rMu, iMu, int M) {
+03    int n = blockIdx.x * FHD_THREADS_PER_BLOCK + threadIdx.x;
+                  // assign frequently accessed coordinate and output
+                  // elements into registers
+04    float xn_r = x[n]; float yn_r = y[n]; float zn_r = z[n];
+05    float rFhDn_r = rFhD[n]; float iFhDn_r = iFhD[n];
+06    for (int m = 0; m < M; m++) {
+07      float expFhD = 2*PI*(kx[m]*xn_r+ky[m]*yn_r+kz[m]*zn_r);
+08      float cArg = cos(expFhD);
+09      float sArg = sin(expFhD);
+10      rFhDn_r += rMu[m]*cArg - iMu[m]*sArg;
+11      iFhDn_r += iMu[m]*cArg + rMu[m]*sArg;
+12    }
+13    rFhD[n] = rFhD_r; iFhD[n] = iFhD_r;
+14  }
+```
 
+The access pattern for arrays uses different index variables:
+- `x[]`, `y[]`, and `z[]` are accessed using index `n` (e.g., `x[n]`, `y[n]`, `z[n]`)
+- `kx[]`, `ky[]`, and `kz[]` are accessed using index `m` (e.g., `kx[m]`, `ky[m]`, `kz[m]`)
 
+This difference in indexing patterns is significant because:
 
+1. The variable `n` is calculated once per thread and remains constant throughout the kernel execution for that thread (line 03): 
+   ```cpp
+   int n = blockIdx.x * FHD_THREADS_PER_BLOCK + threadIdx.x;
+   ```
 
+2. The variable `m` is used as a loop counter (line 06):
+   ```cpp
+   for (int m = 0; m < M; m++) {
+   ```
+
+It doesn't make sense to load `kx[n]` into a register because, kernel never uses `kx[n]` - it only ever accesses `kx[m]` where `m` iterates from 0 to M-1. 
+
+Assuming that the question is wrong and they mean "it does not make sense to try to load *kx[m]*" the answer is that we access `M` values of `kx[m]`, for every of `N/FHD_THREADS_PER_BLOCK` threads we are executing, it is not a value that could be shared accross the loop.
