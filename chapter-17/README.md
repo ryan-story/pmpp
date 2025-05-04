@@ -138,7 +138,7 @@ for (int n = 0; n < N; n++) {
 - (n=1, m=1)
 - ...
 
-We execute all iterations for `m` (from `0` to `M-1`) while keeping `n=0`, then increment `n` and repeat all iterations of `m` again. The total number of iterations is still `M×N`, name the m-loop completes `N` times.
+We execute all iterations for `m` (from `0` to `M-1`) while keeping `n=0`, then increment `n` and repeat all iterations of `m` again. The total number of iterations is still `M×N`, namely the m-loop completes `N` times.
 
 **b. List the execution order of the loop body from different iterations after loop interchange. Identify these iterations with the values of m and n.**
 
