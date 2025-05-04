@@ -24,7 +24,7 @@
 11  }
 ```
 
-#### Loop fission on the FHD computation.
+#### Loop fission on the FᴴD computation.
 
 ```cpp
 01  for (int m = 0; m < M; m++) {
@@ -106,11 +106,93 @@ Hence we can determine that yes the result of `a and b part of this exericse wil
 
 **Loop interchange swaps the inner loop into the outer loop and vice versa. Use the loops from Fig. 17.9 and enumerate the execution order of the instances of loop body before and after the loop exchange.**
 
+```cpp
+01  for (int n = 0; n < N; n++) {
+02    for (int m = 0; m < M; m++) {
+03      float expFhD = 2*PI*(kx[m]*x[n] + ky[m]*y[n] + kz[m]*z[n]);
+04      float cArg = cos(expFhD);
+05      float sArg = sin(expFhD);
+06      rFhD[n] += rMu[m]*cArg - iMu[m]*sArg;
+07      iFhD[n] += iMu[m]*cArg + rMu[m]*sArg;
+08    }
+09  }
+```
+Loop interchange of the FᴴD computation.
+
 **a. List the execution order of the loop body from different iterations before loop interchange. Identify these iterations with the values of m and n.** 
+
+```cpp
+for (int n = 0; n < N; n++) {
+  for (int m = 0; m < M; m++) {
+    // Loop body
+  }
+}
+```
+
+- (m=0, n=0)
+- (m=0, n=1)
+- (m=0, n=2)
+- ...
+-  N-1: (m=0, n=N-1)
+- N: (m=1, n=0)
+- N+1: (m=1, n=1)
+- ...
+- N+N-1: (m=1, n=N-1)
+- ...
+- (M-1)x N: (m=M-1, n=0)
+- (M-1)x N + 1: (m=M-1, n=1)
+- ...
+- (M-1)x N + N-1: (m=M-1, n=N-1)
+
+The pattern here is that we first execute all iterations for n (from 0 to N-1) while keeping m=0, then increment m and repeat all iterations of n again. The total number of iterations is M×N, with the n-loop completing M times.
+
 
 **b. List the execution order of the loop body from different iterations after loop interchange. Identify these iterations with the values of m and n.**
 
+```cpp
+for (int m = 0; m < M; m++) {
+  for (int n = 0; n < N; n++) {
+    // Loop body
+  }
+}
+```
+
+- (n=0, m=0)
+- (n=0, m=1)
+- (n=0, m=2)
+- ...
+- (n=0, m=M-1)
+- (n=1, m=0)
+- (n=1, m=1)
+- ...
+- (n=1, m=M-1)
+- ...
+- (n=N-1, m=0)
+- (n=N-1, m=1)
+- ...
+- (n=N-1, m=M-1)
+
+Now we execute all iterations for m (from 0 to M-1) while keeping n=0, then increment n and repeat all iterations of m again. The total number of iterations is still M×N, but now the m-loop completes N times.
+
+
 **c. Determine whether the execution results in parts (a) and (b) of this exercise will be identical. The execution results are identical if all data required by a part are properly generated and preserved for its consumption before that part executes and the execution result of the part is not overwritten by other parts that should come after the part in the original execution order.**
+
+To answer this question we need to analyze two aspects: 
+1. Are all data in both cases properly generated and preserved before the inner loop execution starts?
+2. Are the results of the inner loop not overwritten in the inner looop. 
+
+1. The variables `expFhD`, `cArg`, and `sArg` are local to each iteration and don't carry values between iterations, so we can assume the first criterium is satisfied. 
+
+2. The key operations affecting program state are: 
+
+```cpp
+rFhD[n] += rMu[m]*cArg - iMu[m]*sArg;
+iFhD[n] += iMu[m]*cArg + rMu[m]*sArg;
+```
+These operations accumulate values into `rFhD[n]` and `iFhD[n]` using `+=`. Since addition is commutative and associative, the order in which we accumulate these values doesn't change the final result. In both loop orders, each `rFhD[n]` and `iFhD[n]` gets exactly the same set of updates from all values of `m`.
+
+**Therefore, the execution results in parts (a) and (b) will be identical.** The loop interchange preserves the computation's correctness because there are no dependencies between different iterations that would be violated by changing the loop order.
+
 
 ### Exercise 3
 
