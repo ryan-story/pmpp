@@ -4,21 +4,13 @@ CUDA_FLAGS = -O3 -arch=sm_60 # Adjust the architecture as needed for your GPU
 # Output executable
 TARGET = energy_benchmark
 
-# Object files
-OBJS = benchmark.o cenergy.o
-
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(NVCC) $(CUDA_FLAGS) -o $@ $^
-
-benchmark.o: benchmark.cu benchmark.h cenergy.h
-	$(NVCC) $(CUDA_FLAGS) -c $< -o $@
-
-cenergy.o: cenergy.cu cenergy.h
-	$(NVCC) $(CUDA_FLAGS) -c $< -o $@
+# Direct compilation approach - no intermediate object files
+$(TARGET): benchmark.cu cenergy.cu cenergy.h benchmark.h
+	$(NVCC) $(CUDA_FLAGS) benchmark.cu cenergy.cu -o $(TARGET)
 
 clean:
-	rm -f $(TARGET) $(OBJS)
+	rm -f $(TARGET)
 
 .PHONY: all clean
