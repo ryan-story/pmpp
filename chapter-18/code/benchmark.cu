@@ -5,6 +5,22 @@
 #include <math.h>
 #include <time.h>
 
+// Function to clear L2 cache between benchmark runs
+void clear_l2() {
+    static int l2_clear_size = 0;
+    static unsigned char* gpu_scratch_l2_clear = NULL;
+    
+    if (!gpu_scratch_l2_clear) {
+        int dev;
+        gpuErrchk(cudaGetDevice(&dev));
+        gpuErrchk(cudaDeviceGetAttribute(&l2_clear_size, cudaDevAttrL2CacheSize, dev));
+        l2_clear_size *= 2;  // Use a buffer twice the L2 size
+        gpuErrchk(cudaMalloc(&gpu_scratch_l2_clear, l2_clear_size));
+    }
+    
+    gpuErrchk(cudaMemset(gpu_scratch_l2_clear, 0, l2_clear_size));
+}
+
 // Function to generate k synthetic atoms
 void generate_atoms(float* atoms, int numatoms, float max_x, float max_y, float max_z) {
     // Seed random number generator with defined seed
@@ -81,14 +97,90 @@ int grids_allclose(const float* grid1, const float* grid2, dim3 grid_dimensions,
     return 1;  // Grids match within tolerance
 }
 
+// Generic benchmarking function for energy calculation routines
+float benchmark_energy_func(EnergyCalculationFunc func, float* energygrid, dim3 grid, 
+                           float gridspacing, float z, const float* atoms, int numatoms,
+                           int warmup, int reps, const char* name) {
+                           
+    printf("Benchmarking %s...\n", name);
+    
+    // For CPU functions
+    if (name[0] == 'S') {  // Sequential implementation
+        // Warmup runs
+        for (int i = 0; i < warmup; i++) {
+            func(energygrid, grid, gridspacing, z, atoms, numatoms);
+        }
+        
+        // Timing runs
+        clock_t start_time, end_time;
+        double total_time_ms = 0.0;
+        
+        for (int i = 0; i < reps; i++) {
+            start_time = clock();
+            func(energygrid, grid, gridspacing, z, atoms, numatoms);
+            end_time = clock();
+            
+            double elapsed_ms = 1000.0 * (double)(end_time - start_time) / CLOCKS_PER_SEC;
+            total_time_ms += elapsed_ms;
+        }
+        
+        return total_time_ms / reps;
+    }
+    // For GPU functions
+    else {
+        // Warmup runs
+        for (int i = 0; i < warmup; i++) {
+            func(energygrid, grid, gridspacing, z, atoms, numatoms);
+            gpuErrchk(cudaDeviceSynchronize());
+        }
+        
+        // Timing runs
+        cudaEvent_t start, stop;
+        gpuErrchk(cudaEventCreate(&start));
+        gpuErrchk(cudaEventCreate(&stop));
+        
+        float total_time_ms = 0.0f;
+        
+        for (int i = 0; i < reps; i++) {
+            // Clear L2 cache to reduce inter-run effects
+            clear_l2();
+            
+            gpuErrchk(cudaEventRecord(start, 0));
+            func(energygrid, grid, gridspacing, z, atoms, numatoms);
+            gpuErrchk(cudaEventRecord(stop, 0));
+            gpuErrchk(cudaEventSynchronize(stop));
+            
+            float elapsed_ms = 0.0f;
+            gpuErrchk(cudaEventElapsedTime(&elapsed_ms, start, stop));
+            total_time_ms += elapsed_ms;
+        }
+        
+        gpuErrchk(cudaEventDestroy(start));
+        gpuErrchk(cudaEventDestroy(stop));
+        
+        return total_time_ms / reps;
+    }
+}
+
 int main() {
     // Grid configuration
     dim3 grid(100, 100, 50);
     float gridspacing = 0.5;  // 0.5 Ångström between points
     float z = 10.0;           // Computing energy for z=10 plane
 
+    // Benchmarking parameters
+    int warmup_runs = 3;
+    int timing_runs = 10;
+
     // Number of atoms to generate
     int numatoms = 10000;  // Reduced for faster testing - adjust as needed
+
+    printf("Energy Grid Benchmark\n");
+    printf("=====================\n");
+    printf("Grid size: %d x %d x %d\n", grid.x, grid.y, grid.z);
+    printf("Grid spacing: %.1f Å\n", gridspacing);
+    printf("Number of atoms: %d\n", numatoms);
+    printf("Benchmarking for z=%.1f plane\n\n", z);
 
     // Allocate memory for atoms
     float* atoms = (float*)malloc(numatoms * 4 * sizeof(float));
@@ -109,76 +201,79 @@ int main() {
         printf("Atom %d: Position (%.2f, %.2f, %.2f), Charge: %.2f\n", i, atoms[i * 4], atoms[i * 4 + 1],
                atoms[i * 4 + 2], atoms[i * 4 + 3]);
     }
+    printf("\n");
 
     // Allocate energy grids for each approach
     size_t grid_size = grid.x * grid.y * grid.z;
     float* energygrid_seq = (float*)calloc(grid_size, sizeof(float));
+    float* energygrid_gpu_scatter = (float*)calloc(grid_size, sizeof(float));
     float* energygrid_gpu_gather = (float*)calloc(grid_size, sizeof(float));
     float* energygrid_gpu_coarsen = (float*)calloc(grid_size, sizeof(float));
     float* energygrid_gpu_coalescing = (float*)calloc(grid_size, sizeof(float));
 
-    if (!energygrid_seq || !energygrid_gpu_gather || !energygrid_gpu_coarsen || !energygrid_gpu_coalescing) {
+    if (!energygrid_seq || !energygrid_gpu_scatter || !energygrid_gpu_gather || 
+        !energygrid_gpu_coarsen || !energygrid_gpu_coalescing) {
         printf("Memory allocation for energy grids failed\n");
         free(atoms);
         if (energygrid_seq) free(energygrid_seq);
+        if (energygrid_gpu_scatter) free(energygrid_gpu_scatter);
         if (energygrid_gpu_gather) free(energygrid_gpu_gather);
         if (energygrid_gpu_coarsen) free(energygrid_gpu_coarsen);
         if (energygrid_gpu_coalescing) free(energygrid_gpu_coalescing);
         return 1;
     }
 
-    // Run sequential approach and measure time
-    clock_t start_seq, end_seq;
-    start_seq = clock();
-    cenergySequential(energygrid_seq, grid, gridspacing, z, atoms, numatoms);
-    end_seq = clock();
-    double time_seq = ((double)(end_seq - start_seq)) / CLOCKS_PER_SEC;
-
-    // Run GPU gather approach with chunking and measure time
-    clock_t start_gather, end_gather;
-    start_gather = clock();
-    cenergyParallelGather(energygrid_gpu_gather, grid, gridspacing, z, atoms, numatoms);
-    end_gather = clock();
-    double time_gather = ((double)(end_gather - start_gather)) / CLOCKS_PER_SEC;
-
-    // Run GPU thread coarsening approach and measure time
-    clock_t start_coarsen, end_coarsen;
-    start_coarsen = clock();
-    cenergyParallelCoarsen(energygrid_gpu_coarsen, grid, gridspacing, z, atoms, numatoms);
-    end_coarsen = clock();
-    double time_coarsen = ((double)(end_coarsen - start_coarsen)) / CLOCKS_PER_SEC;
-
-    // Run GPU memory coalescing approach and measure time
-    clock_t start_coalescing, end_coalescing;
-    start_coalescing = clock();
-    cenergyParallelCoalescing(energygrid_gpu_coalescing, grid, gridspacing, z, atoms, numatoms);
-    end_coalescing = clock();
-    double time_coalescing = ((double)(end_coalescing - start_coalescing)) / CLOCKS_PER_SEC;
+    // Run benchmarks with the new benchmark function
+    float time_seq = benchmark_energy_func(cenergySequential, energygrid_seq, 
+                                          grid, gridspacing, z, atoms, numatoms,
+                                          warmup_runs, timing_runs, "Sequential");
+                                          
+    float time_scatter = benchmark_energy_func(cenergyParallelScatter, energygrid_gpu_scatter,
+                                             grid, gridspacing, z, atoms, numatoms,
+                                             warmup_runs, timing_runs, "GPU Scatter");
+                                          
+    float time_gather = benchmark_energy_func(cenergyParallelGather, energygrid_gpu_gather,
+                                             grid, gridspacing, z, atoms, numatoms,
+                                             warmup_runs, timing_runs, "GPU Gather");
+                                             
+    float time_coarsen = benchmark_energy_func(cenergyParallelCoarsen, energygrid_gpu_coarsen,
+                                              grid, gridspacing, z, atoms, numatoms,
+                                              warmup_runs, timing_runs, "GPU Thread Coarsening");
+                                              
+    float time_coalescing = benchmark_energy_func(cenergyParallelCoalescing, energygrid_gpu_coalescing,
+                                                 grid, gridspacing, z, atoms, numatoms,
+                                                 warmup_runs, timing_runs, "GPU Memory Coalescing");
 
     // Compare results
     printf("\nPerformance Results:\n");
-    printf("Sequential Approach: %.6f seconds\n", time_seq);
-    printf("GPU Gather Implementation: %.6f seconds\n", time_gather);
-    printf("GPU Thread Coarsening Implementation: %.6f seconds\n", time_coarsen);
-    printf("GPU Memory Coalescing Implementation: %.6f seconds\n", time_coalescing);
+    printf("=====================\n");
+    printf("Sequential Approach: %.3f ms\n", time_seq);
+    printf("GPU Scatter Implementation: %.3f ms\n", time_scatter);
+    printf("GPU Gather Implementation: %.3f ms\n", time_gather);
+    printf("GPU Thread Coarsening Implementation: %.3f ms\n", time_coarsen);
+    printf("GPU Memory Coalescing Implementation: %.3f ms\n", time_coalescing);
 
-    if (time_seq > 0.0) {
-        printf("GPU Gather Speedup: %.2fx\n", time_seq / time_gather);
-        printf("GPU Thread Coarsening Speedup: %.2fx\n", time_seq / time_coarsen);
-        printf("GPU Memory Coalescing Speedup: %.2fx\n", time_seq / time_coalescing);
-        printf("Memory Coalescing vs Thread Coarsening: %.2fx\n", time_coarsen / time_coalescing);
-    }
+    printf("\nSpeedup Analysis:\n");
+    printf("=================\n");
+    printf("GPU Scatter vs Sequential: %.2fx\n", time_seq / time_scatter);
+    printf("GPU Gather vs Sequential: %.2fx\n", time_seq / time_gather);
+    printf("GPU Thread Coarsening vs Sequential: %.2fx\n", time_seq / time_coarsen);
+    printf("GPU Memory Coalescing vs Sequential: %.2fx\n", time_seq / time_coalescing);
 
-    // Print sample results from each approach
+    // Print sample results from each approach for verification
     int z_index = (int)(z / gridspacing);
     int sample_idx = grid.x * grid.y * z_index + grid.x * 50 + 50;
     printf("\nEnergy at grid point (50,50,%d):\n", z_index);
     printf("Sequential: %f\n", energygrid_seq[sample_idx]);
+    printf("GPU Scatter: %f\n", energygrid_gpu_scatter[sample_idx]);
     printf("GPU Gather: %f\n", energygrid_gpu_gather[sample_idx]);
     printf("GPU Thread Coarsening: %f\n", energygrid_gpu_coarsen[sample_idx]);
     printf("GPU Memory Coalescing: %f\n", energygrid_gpu_coalescing[sample_idx]);
 
-    printf("\nComparing Sequential vs. GPU Memory Coalescing:\n");
+    // Verify results match within tolerance
+    printf("\nResult Validation:\n");
+    printf("=================\n");
+    printf("Comparing Sequential vs. GPU Memory Coalescing:\n");
     grids_allclose(energygrid_seq, energygrid_gpu_coalescing, grid, 1e-2, 1e-3, 0);
     
     printf("\nComparing GPU Thread Coarsening vs. GPU Memory Coalescing:\n");
@@ -186,6 +281,7 @@ int main() {
 
     // Clean up
     free(energygrid_seq);
+    free(energygrid_gpu_scatter);
     free(energygrid_gpu_gather);
     free(energygrid_gpu_coarsen);
     free(energygrid_gpu_coalescing);
