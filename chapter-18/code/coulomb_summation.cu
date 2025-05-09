@@ -22,7 +22,67 @@ void generate_atoms(float* atoms, int numatoms, float max_x, float max_y, float 
     }
 }
 
-void cenergy(float* energygrid, dim3 grid, float gridspacing, float z, const float* atoms, int numatoms) {
+// Uses the formula: |a - b| <= atol + rtol * |b|
+int grids_allclose(const float* grid1, const float* grid2, dim3 grid_dimensions, float rtol, float atol, int verbose) {
+    // Calculate the total number of grid points
+    int total_grid_points = grid_dimensions.x * grid_dimensions.y * grid_dimensions.z;
+
+    int mismatches = 0;
+    float max_diff = 0.0f;
+    int max_diff_idx = -1;
+
+    // Compare each grid point
+    for (int i = 0; i < total_grid_points; i++) {
+        // Calculate absolute difference
+        float abs_diff = fabsf(grid1[i] - grid2[i]);
+        // Calculate tolerance threshold
+        float threshold = atol + rtol * fabsf(grid2[i]);
+
+        if (abs_diff > threshold) {
+            mismatches++;
+
+            // Track the location of maximum difference
+            if (abs_diff > max_diff) {
+                max_diff = abs_diff;
+                max_diff_idx = i;
+            }
+
+            // If verbose and this is one of the first few mismatches, print details
+            if (verbose && mismatches <= 10) {
+                int z = i / (grid_dimensions.x * grid_dimensions.y);
+                int remainder = i % (grid_dimensions.x * grid_dimensions.y);
+                int y = remainder / grid_dimensions.x;
+                int x = remainder % grid_dimensions.x;
+
+                printf("Mismatch at grid point (%d, %d, %d): %f vs %f (diff: %f, threshold: %f)\n", x, y, z, grid1[i],
+                       grid2[i], abs_diff, threshold);
+            }
+        }
+    }
+
+    // Print summary
+    if (mismatches > 0) {
+        printf("Found %d mismatches out of %d points (%.2f%%)\n", mismatches, total_grid_points,
+               (float)mismatches * 100.0f / total_grid_points);
+
+        // Print info about maximum difference
+        if (max_diff_idx >= 0) {
+            int z = max_diff_idx / (grid_dimensions.x * grid_dimensions.y);
+            int remainder = max_diff_idx % (grid_dimensions.x * grid_dimensions.y);
+            int y = remainder / grid_dimensions.x;
+            int x = remainder % grid_dimensions.x;
+
+            printf("Maximum difference: %f at point (%d, %d, %d)\n", max_diff, x, y, z);
+        }
+
+        return 0;  // Grids don't match
+    }
+
+    printf("All %d grid points match within tolerances (rtol=%e, atol=%e)\n", total_grid_points, rtol, atol);
+    return 1;  // Grids match within tolerance
+}
+
+void cenergySequential(float* energygrid, dim3 grid, float gridspacing, float z, const float* atoms, int numatoms) {
     int atomarrdim = numatoms * 4;  // x,y,z, and charge info for each atom
     for (int j = 0; j < grid.y; j++) {
         // calculate y coordinate of the grid point based on j
@@ -78,7 +138,7 @@ int main() {
     int numatoms = 10000;
 
     // Allocate memory for atoms
-    float *atoms = (float *)malloc(numatoms * 4 * sizeof(float));
+    float* atoms = (float*)malloc(numatoms * 4 * sizeof(float));
     if (!atoms) {
         printf("Memory allocation for atoms failed\n");
         return 1;
@@ -113,7 +173,7 @@ int main() {
     }
 
     // Function call
-    cenergy(energygrid, grid, gridspacing, z, atoms, numatoms);
+    cenergySequential(energygrid, grid, gridspacing, z, atoms, numatoms);
     // cenergySequentialOptimized(energygrid, grid, gridspacing, z, atoms, numatoms);
 
     // Print some sample results
