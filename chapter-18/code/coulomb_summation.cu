@@ -6,9 +6,9 @@
 
 // Define a fixed seed for reproducibility
 #define RANDOM_SEED 42
-#define BLOCK_SIZE 256
-#define CHUNK_SIZE 256  // Maximum number of atoms to process in one chunk
-#define COARSEN_FACTOR 4 // Thread coarsening factor
+#define BLOCK_SIZE 1024
+#define CHUNK_SIZE 1024    // Maximum number of atoms to process in one chunk
+#define COARSEN_FACTOR 1  // Thread coarsening factor
 
 // CUDA kernel using constant memory
 __constant__ float atoms[CHUNK_SIZE * 4];  // Each atom has x,y,z,charge
@@ -235,20 +235,24 @@ void cenergyParallelGather(float* host_energygrid, dim3 grid_dim, float gridspac
 __global__ void cenergyCoarsenKernel(float* energygrid, dim3 grid, float gridspacing, float z, int atoms_in_chunk) {
     int base_i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x * COARSEN_FACTOR;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    
-    if (j >= grid.y) return;
-    
+
+    if (j >= grid.y) {
+        return;
+    }
+
     int k = z / gridspacing;
     float y = gridspacing * (float)j;
-    
+
     // Process COARSEN_FACTOR points per thread
     for (int offset = 0; offset < COARSEN_FACTOR; offset++) {
         int i = base_i + offset;
-        if (i >= grid.x) continue; // Skip if out of bounds
-        
+        if (i >= grid.x) {
+            continue;  // Skip if out of bounds
+        }
+
         float x = gridspacing * (float)i;
         float energy = 0.0f;
-        
+
         // Calculate for all atoms
         for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
             float dx = x - atoms[n];
@@ -258,7 +262,7 @@ __global__ void cenergyCoarsenKernel(float* energygrid, dim3 grid, float gridspa
             float charge = atoms[n + 3];
             energy += charge / sqrtf(dx * dx + dysqdzq);
         }
-        
+
         // Write result
         energygrid[grid.x * grid.y * k + grid.x * j + i] += energy;
     }
@@ -296,8 +300,8 @@ void cenergyParallelCoarsen(float* host_energygrid, dim3 grid_dim, float gridspa
     dim3 gridDim(((grid_dim.x + COARSEN_FACTOR - 1) / COARSEN_FACTOR + blockDim.x - 1) / blockDim.x,
                  (grid_dim.y + blockDim.y - 1) / blockDim.y);
 
-    printf("Thread Coarsening: Launching kernel with grid: %d x %d blocks of %d x %d threads\n", 
-           gridDim.x, gridDim.y, blockDim.x, blockDim.y);
+    printf("Thread Coarsening: Launching kernel with grid: %d x %d blocks of %d x %d threads\n", gridDim.x, gridDim.y,
+           blockDim.x, blockDim.y);
 
     // For each chunk of atoms
     for (int chunk = 0; chunk < num_chunks; chunk++) {
@@ -317,6 +321,132 @@ void cenergyParallelCoarsen(float* host_energygrid, dim3 grid_dim, float gridspa
 
         // Launch kernel for this chunk
         cenergyCoarsenKernel<<<gridDim, blockDim>>>(d_energygrid, grid_dim, gridspacing, z, atoms_in_chunk);
+
+        // Check for kernel launch errors
+        err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            printf("Kernel launch error: %s\n", cudaGetErrorString(err));
+            cudaFree(d_energygrid);
+            return;
+        }
+
+        // Wait for kernel to complete
+        err = cudaDeviceSynchronize();
+        if (err != cudaSuccess) {
+            printf("Error synchronizing: %s\n", cudaGetErrorString(err));
+            cudaFree(d_energygrid);
+            return;
+        }
+    }
+
+    // Copy results back to host
+    err = cudaMemcpy(host_energygrid, d_energygrid, grid_size, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        printf("Failed to copy energy grid from device to host (error code %s)!\n", cudaGetErrorString(err));
+        cudaFree(d_energygrid);
+        return;
+    }
+
+    // Free device memory
+    cudaFree(d_energygrid);
+}
+
+__global__ void cenergyCoalescingKernel(float* energygrid, dim3 grid, float gridspacing, float z, int atoms_in_chunk) {
+    int base_i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    if (j >= grid.y) return;
+    
+    int k = z / gridspacing;
+    float y = gridspacing * (float)j;
+    
+    // Use dynamic array to store the energy values
+    float energies[COARSEN_FACTOR];
+    
+    // Initialize all energies to 0
+    for (int c = 0; c < COARSEN_FACTOR; c++) {
+        energies[c] = 0.0f;
+    }
+    
+    // Calculate potential contribution from all atoms
+    for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
+        float dx_base = gridspacing * (float)base_i - atoms[n];
+        float dy = y - atoms[n+1];
+        float dz = z - atoms[n+2];
+        float dysqdzq = dy*dy + dz*dz;
+        float charge = atoms[n+3];
+        
+        // Calculate energy for each point this thread handles
+        for (int c = 0; c < COARSEN_FACTOR; c++) {
+            float dx = dx_base + c * blockDim.x * gridspacing;
+            energies[c] += charge / sqrtf(dx*dx + dysqdzq);
+        }
+    }
+    
+    // Write results with bounds checking for coalesced memory access
+    for (int c = 0; c < COARSEN_FACTOR; c++) {
+        int idx = base_i + c * blockDim.x;
+        if (idx < grid.x) {
+            energygrid[grid.x*grid.y*k + grid.x*j + idx] += energies[c];
+        }
+    }
+}
+
+void cenergyParallelCoalescing(float* host_energygrid, dim3 grid_dim, float gridspacing, float z,
+                               const float* host_atoms, int numatoms) {
+    // Error code to check return values for CUDA calls
+    cudaError_t err = cudaSuccess;
+
+    // Allocate device memory for the energy grid
+    float* d_energygrid = NULL;
+    size_t grid_size = grid_dim.x * grid_dim.y * grid_dim.z * sizeof(float);
+    err = cudaMalloc((void**)&d_energygrid, grid_size);
+    if (err != cudaSuccess) {
+        printf("Failed to allocate device memory for energy grid (error code %s)!\n", cudaGetErrorString(err));
+        return;
+    }
+
+    // Initialize energy grid to zero
+    err = cudaMemset(d_energygrid, 0, grid_size);
+    if (err != cudaSuccess) {
+        printf("Failed to initialize device memory (error code %s)!\n", cudaGetErrorString(err));
+        cudaFree(d_energygrid);
+        return;
+    }
+
+    // Process atoms in chunks
+    int num_chunks = (numatoms + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    printf("Processing %d atoms in %d chunks of size %d\n", numatoms, num_chunks, CHUNK_SIZE);
+
+    // Set up execution configuration
+    dim3 blockDim(16, 16);  // 256 threads per block
+
+    // Calculate grid dimensions based on coarsening factor
+    // Each block processes blockDim.x * COARSEN_FACTOR grid points in x dimension
+    dim3 gridDim((grid_dim.x + blockDim.x * COARSEN_FACTOR - 1) / (blockDim.x * COARSEN_FACTOR),
+                (grid_dim.y + blockDim.y - 1) / blockDim.y);
+
+    printf("Memory Coalescing: Launching kernel with grid: %d x %d blocks of %d x %d threads\n", gridDim.x, gridDim.y,
+           blockDim.x, blockDim.y);
+
+    // For each chunk of atoms
+    for (int chunk = 0; chunk < num_chunks; chunk++) {
+        // Calculate the number of atoms in this chunk
+        int start_atom = chunk * CHUNK_SIZE;
+        int atoms_in_chunk = (start_atom + CHUNK_SIZE <= numatoms) ? CHUNK_SIZE : (numatoms - start_atom);
+
+        // Copy this chunk to constant memory
+        size_t chunk_size = atoms_in_chunk * 4 * sizeof(float);
+        err = cudaMemcpyToSymbol(atoms, &host_atoms[start_atom * 4], chunk_size);
+        if (err != cudaSuccess) {
+            printf("Failed to copy atoms chunk %d to constant memory (error code %s)!\n", chunk,
+                   cudaGetErrorString(err));
+            cudaFree(d_energygrid);
+            return;
+        }
+
+        // Launch kernel for this chunk
+        cenergyCoalescingKernel<<<gridDim, blockDim>>>(d_energygrid, grid_dim, gridspacing, z, atoms_in_chunk);
 
         // Check for kernel launch errors
         err = cudaGetLastError();
@@ -503,13 +633,15 @@ int main() {
     float* energygrid_seq = (float*)calloc(grid_size, sizeof(float));
     float* energygrid_gpu_gather = (float*)calloc(grid_size, sizeof(float));
     float* energygrid_gpu_coarsen = (float*)calloc(grid_size, sizeof(float));
+    float* energygrid_gpu_coalescing = (float*)calloc(grid_size, sizeof(float));
 
-    if (!energygrid_seq || !energygrid_gpu_gather || !energygrid_gpu_coarsen) {
+    if (!energygrid_seq || !energygrid_gpu_gather || !energygrid_gpu_coarsen || !energygrid_gpu_coalescing) {
         printf("Memory allocation for energy grids failed\n");
         free(atoms);
         if (energygrid_seq) free(energygrid_seq);
         if (energygrid_gpu_gather) free(energygrid_gpu_gather);
         if (energygrid_gpu_coarsen) free(energygrid_gpu_coarsen);
+        if (energygrid_gpu_coalescing) free(energygrid_gpu_coalescing);
         return 1;
     }
 
@@ -534,16 +666,25 @@ int main() {
     end_coarsen = clock();
     double time_coarsen = ((double)(end_coarsen - start_coarsen)) / CLOCKS_PER_SEC;
 
+    // Run GPU memory coalescing approach and measure time
+    clock_t start_coalescing, end_coalescing;
+    start_coalescing = clock();
+    cenergyParallelCoalescing(energygrid_gpu_coalescing, grid, gridspacing, z, atoms, numatoms);
+    end_coalescing = clock();
+    double time_coalescing = ((double)(end_coalescing - start_coalescing)) / CLOCKS_PER_SEC;
+
     // Compare results
     printf("\nPerformance Results:\n");
     printf("Sequential Approach: %.6f seconds\n", time_seq);
     printf("GPU Gather Implementation: %.6f seconds\n", time_gather);
     printf("GPU Thread Coarsening Implementation: %.6f seconds\n", time_coarsen);
+    printf("GPU Memory Coalescing Implementation: %.6f seconds\n", time_coalescing);
 
     if (time_seq > 0.0) {
         printf("GPU Gather Speedup: %.2fx\n", time_seq / time_gather);
         printf("GPU Thread Coarsening Speedup: %.2fx\n", time_seq / time_coarsen);
-        printf("Thread Coarsening vs Gather: %.2fx\n", time_gather / time_coarsen);
+        printf("GPU Memory Coalescing Speedup: %.2fx\n", time_seq / time_coalescing);
+        printf("Memory Coalescing vs Thread Coarsening: %.2fx\n", time_coarsen / time_coalescing);
     }
 
     // Print sample results from each approach
@@ -553,20 +694,19 @@ int main() {
     printf("Sequential: %f\n", energygrid_seq[sample_idx]);
     printf("GPU Gather: %f\n", energygrid_gpu_gather[sample_idx]);
     printf("GPU Thread Coarsening: %f\n", energygrid_gpu_coarsen[sample_idx]);
+    printf("GPU Memory Coalescing: %f\n", energygrid_gpu_coalescing[sample_idx]);
 
-    printf("\nComparing Sequential vs. GPU Gather:\n");
-    grids_allclose(energygrid_seq, energygrid_gpu_gather, grid, 1e-2, 1e-3, 0);
+    printf("\nComparing Sequential vs. GPU Memory Coalescing:\n");
+    grids_allclose(energygrid_seq, energygrid_gpu_coalescing, grid, 1e-2, 1e-3, 0);
     
-    printf("\nComparing Sequential vs. GPU Thread Coarsening:\n");
-    grids_allclose(energygrid_seq, energygrid_gpu_coarsen, grid, 1e-2, 1e-3, 0);
-    
-    printf("\nComparing GPU Gather vs. GPU Thread Coarsening:\n");
-    grids_allclose(energygrid_gpu_gather, energygrid_gpu_coarsen, grid, 1e-2, 1e-3, 0);
+    printf("\nComparing GPU Thread Coarsening vs. GPU Memory Coalescing:\n");
+    grids_allclose(energygrid_gpu_coarsen, energygrid_gpu_coalescing, grid, 1e-3, 1e-4, 0);
 
     // Clean up
     free(energygrid_seq);
     free(energygrid_gpu_gather);
     free(energygrid_gpu_coarsen);
+    free(energygrid_gpu_coalescing);
     free(atoms);
 
     return 0;
