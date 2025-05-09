@@ -185,7 +185,6 @@ void cenergyParallelScatter(float* host_energygrid, dim3 grid, float gridspacing
 
     // Process atoms in chunks
     int num_chunks = (numatoms + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    printf("Processing %d atoms in %d chunks of size %d\n", numatoms, num_chunks, CHUNK_SIZE);
 
     for (int chunk = 0; chunk < num_chunks; chunk++) {
         // Calculate the number of atoms in this chunk
@@ -256,15 +255,11 @@ void cenergyParallelGather(float* host_energygrid, dim3 grid_dim, float gridspac
 
     // Process atoms in chunks
     int num_chunks = (numatoms + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    printf("Processing %d atoms in %d chunks of size %d\n", numatoms, num_chunks, CHUNK_SIZE);
 
     // Define 2D thread block and grid
     dim3 threadsPerBlock(16, 16);  // 16x16 = 256 threads per block
     dim3 blocksPerGrid((grid_dim.x + threadsPerBlock.x - 1) / threadsPerBlock.x,
                        (grid_dim.y + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-    printf("Gather: Launching kernel with grid: %d x %d blocks of %d x %d threads\n", blocksPerGrid.x, blocksPerGrid.y,
-           threadsPerBlock.x, threadsPerBlock.y);
 
     // For each chunk of atoms
     for (int chunk = 0; chunk < num_chunks; chunk++) {
@@ -334,15 +329,11 @@ void cenergyParallelCoarsen(float* host_energygrid, dim3 grid_dim, float gridspa
 
     // Process atoms in chunks
     int num_chunks = (numatoms + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    printf("Processing %d atoms in %d chunks of size %d\n", numatoms, num_chunks, CHUNK_SIZE);
 
     // Set up execution configuration with coarsening factor
     dim3 blockDim(16, 16);
     dim3 gridDim(((grid_dim.x + COARSEN_FACTOR - 1) / COARSEN_FACTOR + blockDim.x - 1) / blockDim.x,
                  (grid_dim.y + blockDim.y - 1) / blockDim.y);
-
-    printf("Thread Coarsening: Launching kernel with grid: %d x %d blocks of %d x %d threads\n", gridDim.x, gridDim.y,
-           blockDim.x, blockDim.y);
 
     // For each chunk of atoms
     for (int chunk = 0; chunk < num_chunks; chunk++) {
@@ -416,7 +407,6 @@ void cenergyParallelCoalescing(float* host_energygrid, dim3 grid_dim, float grid
 
     // Process atoms in chunks
     int num_chunks = (numatoms + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    printf("Processing %d atoms in %d chunks of size %d\n", numatoms, num_chunks, CHUNK_SIZE);
 
     // Set up execution configuration
     dim3 blockDim(16, 16);  // 256 threads per block
@@ -426,8 +416,6 @@ void cenergyParallelCoalescing(float* host_energygrid, dim3 grid_dim, float grid
     dim3 gridDim((grid_dim.x + blockDim.x * COARSEN_FACTOR - 1) / (blockDim.x * COARSEN_FACTOR),
                 (grid_dim.y + blockDim.y - 1) / blockDim.y);
 
-    printf("Memory Coalescing: Launching kernel with grid: %d x %d blocks of %d x %d threads\n", gridDim.x, gridDim.y,
-           blockDim.x, blockDim.y);
 
     // For each chunk of atoms
     for (int chunk = 0; chunk < num_chunks; chunk++) {
