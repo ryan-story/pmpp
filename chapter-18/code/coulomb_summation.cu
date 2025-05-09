@@ -7,7 +7,7 @@
 // Define a fixed seed for reproducibility
 #define RANDOM_SEED 42
 #define BLOCK_SIZE 256
-#define CHUNK_SIZE 1024  // Maximum number of atoms to process in one chunk
+#define CHUNK_SIZE 256  // Maximum number of atoms to process in one chunk
 #define COARSEN_FACTOR 4 // Thread coarsening factor
 
 // CUDA kernel using constant memory
@@ -233,50 +233,34 @@ void cenergyParallelGather(float* host_energygrid, dim3 grid_dim, float gridspac
 
 // Thread coarsening kernel - each thread processes COARSEN_FACTOR grid points
 __global__ void cenergyCoarsenKernel(float* energygrid, dim3 grid, float gridspacing, float z, int atoms_in_chunk) {
-    int i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x * COARSEN_FACTOR;
+    int base_i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x * COARSEN_FACTOR;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-
-    // Early exit if j is out of bounds
-    if (j >= grid.y) {
-        return;
-    }
-
+    
+    if (j >= grid.y) return;
+    
     int k = z / gridspacing;
     float y = gridspacing * (float)j;
-    float x = gridspacing * (float)i;
-    float energy0 = 0.0f;
-    float energy1 = 0.0f;
-    float energy2 = 0.0f;
-    float energy3 = 0.0f;
-
-    // Calculate potential contribution from all atoms in this chunk
-    for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
-        float dx0 = x - atoms[n];
-        float dx1 = dx0 + gridspacing;
-        float dx2 = dx0 + 2 * gridspacing;
-        float dx3 = dx0 + 3 * gridspacing;
-        float dy = y - atoms[n + 1];
-        float dz = z - atoms[n + 2];
-        float dysqdzq = dy * dy + dz * dz;
-        float charge = atoms[n + 3];
-        energy0 += charge / sqrtf(dx0 * dx0 + dysqdzq);
-        energy1 += charge / sqrtf(dx1 * dx1 + dysqdzq);
-        energy2 += charge / sqrtf(dx2 * dx2 + dysqdzq);
-        energy3 += charge / sqrtf(dx3 * dx3 + dysqdzq);
-    }
-
-    // Add boundary checks before writing to memory
-    if (i < grid.x) {
-        energygrid[grid.x * grid.y * k + grid.x * j + i] += energy0;
-    }
-    if (i + 1 < grid.x) {
-        energygrid[grid.x * grid.y * k + grid.x * j + i + 1] += energy1;
-    }
-    if (i + 2 < grid.x) {
-        energygrid[grid.x * grid.y * k + grid.x * j + i + 2] += energy2;
-    }
-    if (i + 3 < grid.x) {
-        energygrid[grid.x * grid.y * k + grid.x * j + i + 3] += energy3;
+    
+    // Process COARSEN_FACTOR points per thread
+    for (int offset = 0; offset < COARSEN_FACTOR; offset++) {
+        int i = base_i + offset;
+        if (i >= grid.x) continue; // Skip if out of bounds
+        
+        float x = gridspacing * (float)i;
+        float energy = 0.0f;
+        
+        // Calculate for all atoms
+        for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
+            float dx = x - atoms[n];
+            float dy = y - atoms[n + 1];
+            float dz = z - atoms[n + 2];
+            float dysqdzq = dy * dy + dz * dz;
+            float charge = atoms[n + 3];
+            energy += charge / sqrtf(dx * dx + dysqdzq);
+        }
+        
+        // Write result
+        energygrid[grid.x * grid.y * k + grid.x * j + i] += energy;
     }
 }
 
