@@ -108,44 +108,132 @@ void cenergyParallelGather(float* host_energygrid, dim3 grid_dim, float gridspac
 18 }
 ```
 
+##### Memory load
+We load from global memory (`atoms`) *4 times*, in lines 12, 13, 14 and 15, for every point in the grid. Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many kernel in the grid as in the other kernel), so we end up with *4 x 8 = 32* loads from the global memory for every atom in the grid. 
+
+##### Arithmetic operations
+For every kernel, for all the atoms we do:
+- 3 substractions (lines 12, 13, 14)
+- 3 multiplications (line 15)
+- 2 additions (line 15)
+- 1 square root (line 15)
+- 1 division (line 15)
+- 1 more addition (line 15)
+
+**11 operations** in total per thread. 
+
+Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many kernel in the grid as in the other kernel), so we end up with *11 x 8 = 88* floating point operations for every atom in the grid. 
+
+##### Branches
+1 branch per kernel per atom (line 11, the condition on our loop). 
+Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many kernel in the grid as in the other kernel), so we end up with *1 x 8 = 8* branches. 
+
+
 #### Fig. 18.8
 We had to slighly modify the kernel in `Fig. 18.8`. The orignal one hardcoded the COARSEN_FACTOR (the `energy0`, `energy1` ... thing in lines 25-28). This one works conceptually in the same way, but it allows for more flexible thread coarseninging scheme. 
 
 ```cpp
-01  __global__ void cenergyCoarsenKernel(float* *energygrid*, dim3 *grid*, float *gridspacing*, float *z*, int *atoms_in_chunk*) {
-02      int base_i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x * COARSEN_FACTOR;
-03      int j = blockIdx.y * blockDim.y + threadIdx.y;
-04      if (j >= *grid*.y) {
-05          return;
-06      }
-07      int k = *z* / *gridspacing*;
-08      float y = *gridspacing* * (float)j;
-09      // Process COARSEN_FACTOR points per thread
-10      for (int offset = 0; offset < COARSEN_FACTOR; offset++) {
-11          int i = base_i + offset;
-12          if (i >= *grid*.x) {
-13              continue; // Skip if out of bounds
-14          }
-15          float x = *gridspacing* * (float)i;
-16          float energy = 0.0f;
-17          // Calculate for all atoms
-18          for (int n = 0; n < *atoms_in_chunk* * 4; n += 4) {
-19              float dx = x - atoms[n];
-20              float dy = y - atoms[n + 1];
-21              float dz = *z* - atoms[n + 2];
-22              float dysqdzq = dy * dy + dz * dz;
-23              float charge = atoms[n + 3];
-24              energy += charge / sqrtf(dx * dx + dysqdzq);
-25          }
-26          // Write result
-27          *energygrid*[*grid*.x * grid.y * k + *grid*.x * j + i] += energy;
-28      }
-29  }
+1  // Thread coarsening kernel - each thread processes COARSEN_FACTOR grid points
+2  **global** void cenergyCoarsenKernel(float* *energygrid*, dim3 *grid*, float *gridspacing*, float *z*, int *atoms_in_chunk*) {
+3  int base_i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x * COARSEN_FACTOR;
+4  int j = blockIdx.y * blockDim.y + threadIdx.y;
+5  if (j >= *grid*.y) {
+6    return;
+7   }
+8  int k = *z* / *gridspacing*;
+9  float y = *gridspacing* * (float)j;
+10  // Array to store energy values for COARSEN_FACTOR points
+11  float energies[COARSEN_FACTOR];
+12
+13  // Initialize all energies to 0
+14  for (int c = 0; c < COARSEN_FACTOR; c++) {
+15    energies[c] = 0.0f;
+16   }
+17
+18  // Calculate for all atoms
+19  for (int n = 0; n < *atoms_in_chunk* * 4; n += 4) {
+20    float dy = y - atoms[n + 1];
+21    float dz = *z* - atoms[n + 2];
+22    float dysqdzq = dy * dy + dz * dz; // Precalculate dy² + dz²
+23    float charge = atoms[n + 3];
+24
+25    // Calculate energy for each of the COARSEN_FACTOR points
+26    for (int c = 0; c < COARSEN_FACTOR; c++) {
+27      int i = base_i + c;
+28      if (i < grid.x) { // Check bounds
+29        float x = gridspacing * (float)i;
+30        float dx = x - atoms[n];
+31        energies[c] += charge / sqrtf(dx * dx + dysqdzq);
+32      }
+33    }
+34  }
+35
+36  // Write results
+37  for (int c = 0; c < COARSEN_FACTOR; c++) {
+38    int i = base_i + c;
+39    if (i < *grid*.x) { // Check bounds again
+40      *energygrid*[*grid*.x * grid.y * k + *grid*.x * j + i] += energies[c];
+41    }
+42  }
+43 }
 ```
+
+##### Memory load
+
+In the outer loop we have three loads from the global memory (lines 20, 21 and 23). In the inner loop, we load from the global memory `COARSEN_FACTOR` times (line 30), in this case eight. So we have a total of *3 + 8 = 11* loads from the global memory. 
+
+##### Arithmetic operations
+
+In the outer loop we have:
+- 2 substractions (lines 20 & 21)
+- 2 multiplications (line 22)
+- 1 addition (line 22)
+
+5 operations
+
+In the innter loop we have:
+- 1 multiplication (line 29)
+- 1 substraction (line 30)
+- 1 mutliplication (line 31)
+- 1 addition (line 31)
+- 1 square root (line 31)
+- 1 division (line 31)
+- 1 more addition (line 31)
+
+Total of `7` times `COARSEN_FACTOR` or `7 x 8 = 56` operations. 
+
+Bringing us to the total of *5 + 56 = 61* FLOPs. 
+
+##### Branches
+
+We have
+Outer loop:
+- 1 branch for the loop condition (line 19).
+
+Inner loop:
+- 1 branch for the loop condition (line 26).
+- 1 branch for thr boundry check `if (i < grid.x)`.
+
+And the inner one is multiplied by the `COARSEN_FACTOR`.
+So `1 + 2 x 8 = 17` branches. 
+
+
+
+| Operation Type | Fig. 18.6 (Original) | Fig. 18.8 (Thread Coarsening) | Difference |
+|----------------|----------------------|-------------------------------|------------|
+| Memory Loads   | 32                   | 11                            | -21 (-65.6%) |
+| Arithmetic Operations | 88            | 61                            | -27 (-30.7%) |
+| Branches       | 8                    | 17                            | +9 (+112.5%) |
+
+
+So, in them Thread Coarsening kernel, we have substantially less loads from the global memy and much improved arithmetic intensity. 
 
 ### Exercise 3
 
 **Give two potential disadvantages associated with increasing the amount of work done in each CUDA thread, as shown in Section 18.3.**
+
+1. We use substantially more registers. Depending on the hardware, if we use too many registers, it might reduce how many kernels we can launch at the same time, reducing the occupancy.
+2. We are at risk of underutilizing the compute resources available. If we choose too high `COARSEN_FACTOR` our code will become de facto sequential, not taking enough advantage of the parallelism that GPUs enable. 
 
 ### Exercise 4
 
