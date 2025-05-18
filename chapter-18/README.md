@@ -84,8 +84,63 @@ void cenergyParallelGather(float* host_energygrid, dim3 grid_dim, float gridspac
 
 **Compare the number of operations (memory loads, floating-point arithmetic, branches) executed in each iteration of the kernel in Fig. 18.8 with that in Fig. 18.6 for a coarsening factor of 8. Keep in mind that each iteration of the former corresponds to eight iterations of the latter.**
 
-```cpp
+#### Fig. 18.6
 
+```cpp
+01 __constant__ float atoms[CHUNK_SIZE*4];
+02 void __global__ cenergy(float *energygrid, dim3 grid, float gridspacing,
+03                     float z, int numatoms) {
+04     int i = blockIdx.x * blockDim.x + threadIdx.x;
+05     int j = blockIdx.y * blockDim.y + threadIdx.y;
+06     int atomarrdim = numatoms * 4;
+07     int k = z / gridspacing;
+08     float y = gridspacing * (float) j;
+09     float x = gridspacing * (float) i;
+10     float energy = 0.0f;
+      // calculate potential contribution from all atoms
+11     for (int n=0; n<atomarrdim; n+=4) {
+12         float dx = x - atoms[n  ];
+13         float dy = y - atoms[n+1];
+14         float dz = z - atoms[n+2];
+15         energy += atoms[n+3] / sqrtf(dx*dx + dy*dy + dz*dz);
+16     }
+17     energygrid[grid.x*grid.y*k + grid.x*j + i] += energy;
+18 }
+```
+
+#### Fig. 18.8
+We had to slighly modify the kernel in `Fig. 18.8`. The orignal one hardcoded the COARSEN_FACTOR (the `energy0`, `energy1` ... thing in lines 25-28). This one works conceptually in the same way, but it allows for more flexible thread coarseninging scheme. 
+
+```cpp
+01  __global__ void cenergyCoarsenKernel(float* *energygrid*, dim3 *grid*, float *gridspacing*, float *z*, int *atoms_in_chunk*) {
+02      int base_i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x * COARSEN_FACTOR;
+03      int j = blockIdx.y * blockDim.y + threadIdx.y;
+04      if (j >= *grid*.y) {
+05          return;
+06      }
+07      int k = *z* / *gridspacing*;
+08      float y = *gridspacing* * (float)j;
+09      // Process COARSEN_FACTOR points per thread
+10      for (int offset = 0; offset < COARSEN_FACTOR; offset++) {
+11          int i = base_i + offset;
+12          if (i >= *grid*.x) {
+13              continue; // Skip if out of bounds
+14          }
+15          float x = *gridspacing* * (float)i;
+16          float energy = 0.0f;
+17          // Calculate for all atoms
+18          for (int n = 0; n < *atoms_in_chunk* * 4; n += 4) {
+19              float dx = x - atoms[n];
+20              float dy = y - atoms[n + 1];
+21              float dz = *z* - atoms[n + 2];
+22              float dysqdzq = dy * dy + dz * dz;
+23              float charge = atoms[n + 3];
+24              energy += charge / sqrtf(dx * dx + dysqdzq);
+25          }
+26          // Write result
+27          *energygrid*[*grid*.x * grid.y * k + *grid*.x * j + i] += energy;
+28      }
+29  }
 ```
 
 ### Exercise 3
