@@ -89,29 +89,39 @@ __global__ void cenergyCoarsenKernel(float* energygrid, dim3 grid, float gridspa
 
     int k = z / gridspacing;
     float y = gridspacing * (float)j;
-
-    // Process COARSEN_FACTOR points per thread
-    for (int offset = 0; offset < COARSEN_FACTOR; offset++) {
-        int i = base_i + offset;
-        if (i >= grid.x) {
-            continue;  // Skip if out of bounds
+    
+    // Array to store energy values for COARSEN_FACTOR points
+    float energies[COARSEN_FACTOR];
+    
+    // Initialize all energies to 0
+    for (int c = 0; c < COARSEN_FACTOR; c++) {
+        energies[c] = 0.0f;
+    }
+    
+    // Calculate for all atoms
+    for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
+        float dy = y - atoms[n + 1];
+        float dz = z - atoms[n + 2];
+        float dysqdzq = dy * dy + dz * dz;  // Precalculate dy² + dz²
+        float charge = atoms[n + 3];
+        
+        // Calculate energy for each of the COARSEN_FACTOR points
+        for (int c = 0; c < COARSEN_FACTOR; c++) {
+            int i = base_i + c;
+            if (i < grid.x) {  // Check bounds
+                float x = gridspacing * (float)i;
+                float dx = x - atoms[n];
+                energies[c] += charge / sqrtf(dx * dx + dysqdzq);
+            }
         }
-
-        float x = gridspacing * (float)i;
-        float energy = 0.0f;
-
-        // Calculate for all atoms
-        for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
-            float dx = x - atoms[n];
-            float dy = y - atoms[n + 1];
-            float dz = z - atoms[n + 2];
-            float dysqdzq = dy * dy + dz * dz;
-            float charge = atoms[n + 3];
-            energy += charge / sqrtf(dx * dx + dysqdzq);
+    }
+    
+    // Write results
+    for (int c = 0; c < COARSEN_FACTOR; c++) {
+        int i = base_i + c;
+        if (i < grid.x) {  // Check bounds again
+            energygrid[grid.x * grid.y * k + grid.x * j + i] += energies[c];
         }
-
-        // Write result
-        energygrid[grid.x * grid.y * k + grid.x * j + i] += energy;
     }
 }
 
