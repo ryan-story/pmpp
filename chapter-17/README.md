@@ -2,6 +2,12 @@
 
 ## Code
 
+In this chapter we actually don't implement the underlaying reconstruction, what we do is we provide code to improve the understanding of the underlaying concept. We:
+
+- Present an [FFT theory notebook](./code/fft.ipynb), explaining how it works.
+- Present [code for opening an MRI image](./code/mri_reconstruction.ipynb) and conducting a reconstruction on top of it.
+- Implement [code](./code/cg_algo.py) showing how the Conjugate Gradient (CG) works. 
+
 ## Exercises
 
 ### Exercise 1

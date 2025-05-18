@@ -5,3 +5,5 @@ pre-commit
 gradio
 cython
 torchvision
+
+h5py #needed for MRI
