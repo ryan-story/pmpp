@@ -1,6 +1,7 @@
-#include "cenergy.h"
 #include <math.h>
 #include <stdio.h>
+
+#include "cenergy.h"
 
 // CUDA kernel using constant memory
 __constant__ float atoms[CHUNK_SIZE * 4];  // Each atom has x,y,z,charge
@@ -89,22 +90,22 @@ __global__ void cenergyCoarsenKernel(float* energygrid, dim3 grid, float gridspa
 
     int k = z / gridspacing;
     float y = gridspacing * (float)j;
-    
+
     // Array to store energy values for COARSEN_FACTOR points
     float energies[COARSEN_FACTOR];
-    
+
     // Initialize all energies to 0
     for (int c = 0; c < COARSEN_FACTOR; c++) {
         energies[c] = 0.0f;
     }
-    
+
     // Calculate for all atoms
     for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
         float dy = y - atoms[n + 1];
         float dz = z - atoms[n + 2];
         float dysqdzq = dy * dy + dz * dz;  // Precalculate dy² + dz²
         float charge = atoms[n + 3];
-        
+
         // Calculate energy for each of the COARSEN_FACTOR points
         for (int c = 0; c < COARSEN_FACTOR; c++) {
             int i = base_i + c;
@@ -115,7 +116,7 @@ __global__ void cenergyCoarsenKernel(float* energygrid, dim3 grid, float gridspa
             }
         }
     }
-    
+
     // Write results
     for (int c = 0; c < COARSEN_FACTOR; c++) {
         int i = base_i + c;
@@ -128,40 +129,42 @@ __global__ void cenergyCoarsenKernel(float* energygrid, dim3 grid, float gridspa
 __global__ void cenergyCoalescingKernel(float* energygrid, dim3 grid, float gridspacing, float z, int atoms_in_chunk) {
     int base_i = blockIdx.x * blockDim.x * COARSEN_FACTOR + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    
-    if (j >= grid.y) return;
-    
+
+    if (j >= grid.y) {
+        return;
+    }
+
     int k = z / gridspacing;
     float y = gridspacing * (float)j;
-    
+
     // Use dynamic array to store the energy values
     float energies[COARSEN_FACTOR];
-    
+
     // Initialize all energies to 0
     for (int c = 0; c < COARSEN_FACTOR; c++) {
         energies[c] = 0.0f;
     }
-    
+
     // Calculate potential contribution from all atoms
     for (int n = 0; n < atoms_in_chunk * 4; n += 4) {
         float dx_base = gridspacing * (float)base_i - atoms[n];
-        float dy = y - atoms[n+1];
-        float dz = z - atoms[n+2];
-        float dysqdzq = dy*dy + dz*dz;
-        float charge = atoms[n+3];
-        
+        float dy = y - atoms[n + 1];
+        float dz = z - atoms[n + 2];
+        float dysqdzq = dy * dy + dz * dz;
+        float charge = atoms[n + 3];
+
         // Calculate energy for each point this thread handles
         for (int c = 0; c < COARSEN_FACTOR; c++) {
             float dx = dx_base + c * blockDim.x * gridspacing;
-            energies[c] += charge / sqrtf(dx*dx + dysqdzq);
+            energies[c] += charge / sqrtf(dx * dx + dysqdzq);
         }
     }
-    
+
     // Write results with bounds checking for coalesced memory access
     for (int c = 0; c < COARSEN_FACTOR; c++) {
         int idx = base_i + c * blockDim.x;
         if (idx < grid.x) {
-            energygrid[grid.x*grid.y*k + grid.x*j + idx] += energies[c];
+            energygrid[grid.x * grid.y * k + grid.x * j + idx] += energies[c];
         }
     }
 }
@@ -424,8 +427,7 @@ void cenergyParallelCoalescing(float* host_energygrid, dim3 grid_dim, float grid
     // Calculate grid dimensions based on coarsening factor
     // Each block processes blockDim.x * COARSEN_FACTOR grid points in x dimension
     dim3 gridDim((grid_dim.x + blockDim.x * COARSEN_FACTOR - 1) / (blockDim.x * COARSEN_FACTOR),
-                (grid_dim.y + blockDim.y - 1) / blockDim.y);
-
+                 (grid_dim.y + blockDim.y - 1) / blockDim.y);
 
     // For each chunk of atoms
     for (int chunk = 0; chunk < num_chunks; chunk++) {

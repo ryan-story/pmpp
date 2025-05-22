@@ -123,11 +123,11 @@ For every kernel, for all the atoms, we do:
 
 **11 operations** in total per thread. 
 
-Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many threads in the grid as in the other kernel), so we end up with *11 x 8 = 88* floating-point operations for every atom in the grid. 
+Due to the `COARSEN_FACTOR` factor impact we multiply it by `8` (we launch `8x` as many threads in the grid as in the other kernel), so we end up with *11 x 8 = 88* floating-point operations for every atom in the grid. 
 
 ##### Branches
 1 branch per kernel per atom (line 11, the condition on our loop). 
-Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many threads in the grid as in the other kernel), so we end up with 1 x 8 = 8 branches.
+Due to the `COARSEN_FACTOR` factor impact we multiply it by `8` (we launch `8x` as many threads in the grid as in the other kernel), so we end up with 1 x 8 = 8 branches.
 
 
 #### Fig. 18.8

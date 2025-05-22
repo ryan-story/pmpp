@@ -2,7 +2,7 @@
 
 ## Code
 
-In this chapter we actually don't implement the underlaying reconstruction, what we do is we provide code to improve the understanding of the underlaying concept. We:
+In this chapter we actually don't implement the underlying reconstruction; what we do is we provide code to improve the understanding of the underlying concept. We:
 
 - Present an [FFT theory notebook](./code/fft.ipynb), explaining how it works.
 - Present [code for opening an MRI image](./code/mri_reconstruction.ipynb) and conducting a reconstruction on top of it.
@@ -98,7 +98,7 @@ Overall, the big change is that all of the `rMu/iMu` values are already pre-comp
 
 **c. Determine whether the execution results in parts (a) and (b) of this exercise will be identical. The execution results are identical if all data required by a part are properly generated and preserved for its consumption before that part executes and the execution result of the part is not overwritten by other parts that should come after the part in the original execution order.**
 
-To answer this question, we need to analyze two aspects: 
+To answer this question, we need to analyze two aspects:
 1. Are all data required by the inner loop properly generated and preserved before the inner loop execution starts?
 2. Are the results of the inner loop not overwritten in the inner loop? 
 

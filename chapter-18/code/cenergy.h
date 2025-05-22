@@ -1,5 +1,5 @@
-#ifndef CENERGY_H
-#define CENERGY_H
+#ifndef CHAPTER_18_CODE_CENERGY_H_
+#define CHAPTER_18_CODE_CENERGY_H_
 
 #include <cuda_runtime.h>
 
@@ -12,12 +12,17 @@
 void cenergySequential(float* energygrid, dim3 grid, float gridspacing, float z, const float* atoms, int numatoms);
 
 // Optimized sequential implementation
-void cenergySequentialOptimized(float* energygrid, dim3 grid, float gridspacing, float z, const float* atoms, int numatoms);
+void cenergySequentialOptimized(float* energygrid, dim3 grid, float gridspacing, float z, const float* atoms,
+                                int numatoms);
 
 // GPU implementations
-void cenergyParallelScatter(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms, int numatoms);
-void cenergyParallelGather(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms, int numatoms);
-void cenergyParallelCoarsen(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms, int numatoms);
-void cenergyParallelCoalescing(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms, int numatoms);
+void cenergyParallelScatter(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms,
+                            int numatoms);
+void cenergyParallelGather(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms,
+                           int numatoms);
+void cenergyParallelCoarsen(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms,
+                            int numatoms);
+void cenergyParallelCoalescing(float* host_energygrid, dim3 grid, float gridspacing, float z, const float* host_atoms,
+                               int numatoms);
 
-#endif // CENERGY_H
+#endif  // CHAPTER_18_CODE_CENERGY_H_
