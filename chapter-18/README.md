@@ -4,13 +4,13 @@
 
 We implement all of the kernels discussed in Chapter 18. 
 
-In particural we implement:
+In particular, we implement:
 - Scatter kernel and its corresponding host code from `Fig. 18.5`
 - Gather kernel and its corresponding host code from `Fig. 18.6`
 - Thread coarsening kernel and its corresponding host code from `Fig. 18.8`
 - Thread coarsening and memory coalescing kernel and its corresponding host code from `Fig. 18.10`
 
-For each kernel we implement the corresponding host codebase. All implementations can be found in [cenergy.cu](./code/cenergy.cu). We implement a simple benchmark, comparing the performance between different approaches. The benchmark implementation can be found in [benchmark.cu](./code/benchmark.cu). Note that our benchmark includes copying the data from host memory to device constant memory via `cudaMemcpyToSymbol`. 
+For each kernel, we implement the corresponding host codebase. All implementations can be found in [cenergy.cu](./code/cenergy.cu). We implement a simple benchmark, comparing the performance between different approaches. The benchmark implementation can be found in [benchmark.cu](./code/benchmark.cu). Note that our benchmark includes copying the data from host memory to device constant memory via `cudaMemcpyToSymbol`. 
 
 ## Exercises
 
@@ -109,11 +109,12 @@ void cenergyParallelGather(float* host_energygrid, dim3 grid_dim, float gridspac
 ```
 
 ##### Memory load
-We load from global memory (`atoms`) *4 times*, in lines 12, 13, 14 and 15, for every point in the grid. Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many kernel in the grid as in the other kernel), so we end up with *4 x 8 = 32* loads from the global memory for every atom in the grid. 
+We load from global memory (`atoms`) 4 times, in lines 12, 13, 14, and 15, for every point in the grid. Due to the `COARSEN_FACTOR` factor impact, we multiply it by `8` (we launch `8x` as many kernels in the grid as in the other kernel), so we end up with 4 x 8 = 32 loads from the global memory for every atom in the grid. 
+
 
 ##### Arithmetic operations
-For every kernel, for all the atoms we do:
-- 3 substractions (lines 12, 13, 14)
+For every kernel, for all the atoms, we do:
+- 3 substractions (lines 12, 13, and 14)
 - 3 multiplications (line 15)
 - 2 additions (line 15)
 - 1 square root (line 15)
@@ -122,15 +123,15 @@ For every kernel, for all the atoms we do:
 
 **11 operations** in total per thread. 
 
-Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many kernel in the grid as in the other kernel), so we end up with *11 x 8 = 88* floating point operations for every atom in the grid. 
+Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many threads in the grid as in the other kernel), so we end up with *11 x 8 = 88* floating-point operations for every atom in the grid. 
 
 ##### Branches
 1 branch per kernel per atom (line 11, the condition on our loop). 
-Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many kernel in the grid as in the other kernel), so we end up with *1 x 8 = 8* branches. 
+Due to the `COARSEN_FACTOR` factor inpact we multiply it by `8` (we launch `8x` as many threads in the grid as in the other kernel), so we end up with 1 x 8 = 8 branches.
 
 
 #### Fig. 18.8
-We had to slighly modify the kernel in `Fig. 18.8`. The orignal one hardcoded the COARSEN_FACTOR (the `energy0`, `energy1` ... thing in lines 25-28). This one works conceptually in the same way, but it allows for more flexible thread coarseninging scheme. 
+We had to slightly modify the kernel in `Fig. 18.8`. The original one hardcoded the COARSEN_FACTOR (the `energy0`, `energy1` ... thing in lines 25-28). This one works conceptually in the same way, but it allows for a more flexible thread coarsening scheme. 
 
 ```cpp
 1  // Thread coarsening kernel - each thread processes COARSEN_FACTOR grid points
@@ -180,21 +181,21 @@ We had to slighly modify the kernel in `Fig. 18.8`. The orignal one hardcoded th
 
 ##### Memory load
 
-In the outer loop we have three loads from the global memory (lines 20, 21 and 23). In the inner loop, we load from the global memory `COARSEN_FACTOR` times (line 30), in this case eight. So we have a total of *3 + 8 = 11* loads from the global memory. 
+In the outer loop we have three loads from the global memory (lines 20, 21, and 23). In the inner loop, we load from the global memory `COARSEN_FACTOR` times (line 30), in this case eight. So we have a total of 3 + 8 = 11 loads from the global memory. 
 
 ##### Arithmetic operations
 
 In the outer loop we have:
-- 2 substractions (lines 20 & 21)
+- 2 subtractions (lines 20 & 21)
 - 2 multiplications (line 22)
 - 1 addition (line 22)
 
 5 operations
 
-In the innter loop we have:
+In the inner loop we have:
 - 1 multiplication (line 29)
-- 1 substraction (line 30)
-- 1 mutliplication (line 31)
+- 1 subtraction (line 30)
+- 1 multiplication (line 31)
 - 1 addition (line 31)
 - 1 square root (line 31)
 - 1 division (line 31)
@@ -212,7 +213,7 @@ Outer loop:
 
 Inner loop:
 - 1 branch for the loop condition (line 26).
-- 1 branch for thr boundry check `if (i < grid.x)`.
+- 1 branch for the boundary check `if (i < grid.x)`.
 
 And the inner one is multiplied by the `COARSEN_FACTOR`.
 So `1 + 2 x 8 = 17` branches. 
@@ -226,7 +227,7 @@ So `1 + 2 x 8 = 17` branches.
 | Branches       | 8                    | 17                            | +9 (+112.5%) |
 
 
-So, in them Thread Coarsening kernel, we have substantially less loads from the global memy and much improved arithmetic intensity. 
+So, in the Thread Coarsening kernel, we have substantially fewer loads from the global memory and much improved arithmetic intensity. 
 
 ### Exercise 3
 
@@ -238,5 +239,7 @@ So, in them Thread Coarsening kernel, we have substantially less loads from the 
 ### Exercise 4
 
 **Use Fig. 18.13 to explain how control divergence can arise when threads in a block process a bin in the neighborhood list.**
+
+Depending on the number of atoms in the neighboring bins, different threads will need to iterate over different numbers of atoms. This can cause control divergence. There are some ways to mitigate this (like introducing dummy, 0-energy atoms), but they come at a cost (e.g., wasted space, increased memory bandwidth).
 
 
