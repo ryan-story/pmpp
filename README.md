@@ -14,14 +14,14 @@ With code containing the code needed to replicate the examples mentioned in the 
 
 ## Where to find solutions by chapter
 
-- [Chapter 2](chapter-2/README.md)
-- [Chapter 3](chapter-3/README.md)
-- [Chapter 4](chapter-4/README.md)
-- [Chapter 5](chapter-5/README.md)
-- [Chapter 6](chapter-6/README.md)
-- [Chapter 7](chapter-7/README.md)
-- [Chapter 8](chapter-8/README.md)
-- [Chapter 9](chapter-9/README.md)
+- [Chapter 2](chapter-02/README.md)
+- [Chapter 3](chapter-03/README.md)
+- [Chapter 4](chapter-04/README.md)
+- [Chapter 5](chapter-05/README.md)
+- [Chapter 6](chapter-06/README.md)
+- [Chapter 7](chapter-07/README.md)
+- [Chapter 8](chapter-08/README.md)
+- [Chapter 9](chapter-09/README.md)
 - [Chapter 10](chapter-10/README.md)
 - [Chapter 11](chapter-11/README.md)
 - [Chapter 12](chapter-12/README.md)
