@@ -38,10 +38,13 @@ With code containing the code needed to replicate the examples mentioned in the 
 ## Contributing
 
 If you find an error in one of the answers, please open an issue. Ideally the issue should follow the standard below. 
+
 **Describe the bug**
+
 Describe where the problem is and what precisely is wrong.
 
 **Proposed solution**
+
 Here paste your proposed solution. Please include the reasoning behind why you believe your solution is correct.
 
 ## Running the code
